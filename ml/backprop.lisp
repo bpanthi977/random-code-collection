@@ -8,8 +8,7 @@
   (loop with activation = (elt weights 0) 
 	for x across inputs 
 	for i from 1 
-	summing (* (aref weights i) 
-		   x)))
+	summing (* (aref weights i) x)))
 
 (defun transfer (activation)
   (/ (1+ (exp (- activation)))))
@@ -18,6 +17,37 @@
   weights 
   outputs 
   errors)
+
+(defun random-vector (size)
+  "Create a random vector of given `size'"
+  (let ((weights (make-array size :element-type 'double-float)))
+    (loop for i from 0 
+	  repeat size do 
+	    (setf (aref weights i)  (/ (random 100) 100d0)))
+    weights))
+
+(defun initialize-network-weights (num-neurons)
+  "Create a randomly initialized fully connected network 
+      with number of neurons in each layers given by `num-neurons' 
+      first element of `num-neurons' = no of inputs 
+      last element of `num-neurons' = no of outputs'"
+  (let ((network (make-array (1- (length num-neurons)))))
+    ;; loop over the layers
+    (loop for n in num-neurons  
+	  for m in (rest num-neurons) 
+	  for i from 0
+	  for weights-matrix = (make-array m) do 
+	    ;; loop over the neurons in the layer 
+	    (loop for weights = (random-vector (1+ n))
+		  for i from 0 below m do 
+		    (setf (aref weights-matrix i) weights))
+	    (setf (aref network i) weights-matrix))
+    network))
+
+(defun weight-vector (network i j)
+  "Return the weight vector of `j' the neuron of `i' the layer 
+(first hidden layer is 0-th layer)"
+  (aref (aref (network-weights network) i) j))
 
 (defun initialize-network (num-neurons)
   (let ((weights (initialize-network-weights num-neurons)))

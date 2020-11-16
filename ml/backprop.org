@@ -24,8 +24,7 @@ This [[https://machinelearningmastery.com/implement-backpropagation-algorithm-sc
        (loop with activation = (elt weights 0) 
 	     for x across inputs 
 	     for i from 1 
-	     summing (* (aref weights i) 
-			x)))
+	     summing (* (aref weights i) x)))
    #+end_src
 
    #+RESULTS:
@@ -42,21 +41,26 @@ This [[https://machinelearningmastery.com/implement-backpropagation-algorithm-sc
 ** Network
    Before we implement forward propagation we need a data structure to store the weights and outputs of the network
 *** Weights  
-    #+Name: network-weights-initializer :tangle backprop.lisp
-    #+begin_src lisp 
+    #+Name: network-weights-initializer 
+    #+begin_src lisp :tangle backprop.lisp
+      (defstruct network 
+	weights 
+	outputs 
+	errors)
+
       (defun random-vector (size)
-	     "Create a random vector of given `size'"
-	     (let ((weights (make-array size :element-type 'double-float)))
-	       (loop for i from 0 
-		     repeat size do 
-		       (setf (aref weights i) (coerce (/ (random 100) 100d0) 'double-float)))
-	       weights))
+	"Create a random vector of given `size'"
+	(let ((weights (make-array size :element-type 'double-float)))
+	  (loop for i from 0 
+		repeat size do 
+		  (setf (aref weights i)  (/ (random 100) 100d0)))
+	  weights))
 
       (defun initialize-network-weights (num-neurons)
 	"Create a randomly initialized fully connected network 
-      with number of neurons in each layers given by `num-neurons' 
-      first element of `num-neurons' = no of inputs 
-      last element of `num-neurons' = no of outputs'"
+	    with number of neurons in each layers given by `num-neurons' 
+	    first element of `num-neurons' = no of inputs 
+	    last element of `num-neurons' = no of outputs'"
 	(let ((network (make-array (1- (length num-neurons)))))
 	  ;; loop over the layers
 	  (loop for n in num-neurons  
@@ -72,16 +76,11 @@ This [[https://machinelearningmastery.com/implement-backpropagation-algorithm-sc
 
       (defun weight-vector (network i j)
 	"Return the weight vector of `j' the neuron of `i' the layer 
-(first hidden layer is 0-th layer)"
+      (first hidden layer is 0-th layer)"
 	(aref (aref (network-weights network) i) j))
     #+end_src
 *** Output and Errors 
     #+begin_src lisp :tangle backprop.lisp
-      (defstruct network 
-	weights 
-	outputs 
-	errors)
-
       (defun initialize-network (num-neurons)
 	(let ((weights (initialize-network-weights num-neurons)))
 	  (make-network :weights weights 
@@ -426,6 +425,16 @@ Info about the data is here: http://archive.ics.uci.edu/ml/datasets/seeds
 : NIL
 ** Train with all data 
 #+begin_src lisp  :exports both
+  (defun accuracy (data network)
+    "Evaluate accuracy of `network''s prediction on the `data'"
+    (truncate (/ (count-if (lambda (datum)
+			     (destructuring-bind (input output) datum 
+			       (= (predict network input)
+				  (position 1 output))))
+			   data)
+		 (length data))
+	      0.01))
+
   (defparameter *network* 
     (initialize-network (list 7 5 3)))
 
@@ -435,9 +444,9 @@ Info about the data is here: http://archive.ics.uci.edu/ml/datasets/seeds
 #+end_src
 
 #+RESULTS:
-: 93
+: 94
 
-93% accuracy 
+94% accuracy 
 ** Split Database for k-fold cross validation; k = 5 
 #+begin_src lisp 
   (defun rand (start upper-limit)
@@ -469,16 +478,6 @@ Info about the data is here: http://archive.ics.uci.edu/ml/datasets/seeds
 
 ** Evaluate Algorithm
 #+begin_src lisp
-  (defun accuracy (data network)
-    "Evaluate accuracy of `network''s prediction on the `data'"
-    (truncate (/ (count-if (lambda (datum)
-			     (destructuring-bind (input output) datum 
-			       (= (predict network input)
-				  (position 1 output))))
-			   data)
-		 (length data))
-	      0.01))
-
   (defun evaluate (data network-neurons number-folds learning-rate epochs)
     (shuffle data)
     (let ((n (truncate (length data) number-folds)))
@@ -518,4 +517,3 @@ i.e. on average
 : 92
 
 92% accuracy
-n
