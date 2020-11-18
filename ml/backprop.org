@@ -1,6 +1,7 @@
 #+TITLE: Backpropagation Algorithm in Lisp 
 #+Author: Bibek Panthi
 #+ROAM_REF: https://machinelearningmastery.com/implement-backpropagation-algorithm-scratch-python/
+#+DATE: November 16, 2020
 
 \newpage
 
