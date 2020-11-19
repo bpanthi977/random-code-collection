@@ -203,6 +203,42 @@ output `output' from the network, the actual target `y' "
 			       (aref vector i)))))
       result)))
 
+(define-compiler-macro matrix-dot-vector (&whole expr matrix vector)
+  (cond
+    ((and (listp matrix)
+	  (eql (first matrix) 'transpose)
+	  (eql (length matrix) 2))
+     `(matrix-T-dot-vector ,(second matrix) ,vector))
+    (t expr)))
+
+
+(declaim (inline modify-indexed))
+(defun modify-indexed (f a index)
+  (setf (aref a index) (funcall f (aref a index) 1))
+  a)
+
+(defun modify (f a b)
+  "Alternative of map-into, that works when `b' is index vectors too. 
+Modify vector `a_i' with' f(a_i,b_i)"
+  (if (integerp b)
+      (modify-indexed f a b)
+      (map-into a f a b)))
+
+(define-compiler-macro modify (&whole expr f a b &environment env)
+  "optimize `modify' for indexed vector b"
+  (if (constantp b env)
+      (typecase b 
+	(integer `(modify-indexed ,f ,a ,b))
+	(array expr)
+	(t "error"))
+      (cond ((atom b) expr)
+	    ((or (eql (first b) 'deindex)
+		 (and (eql (first b) 'the) 
+		      (eql (second b) 'integer)))
+	     ;; b is an index variable 
+	     `(modify-indexed ,f ,a ,b))
+	    (t expr))))
+
 (defun bptt (n x y &key (bptt-truncate 4))
   (declare (optimize (debug 3)))
   (check-type n network)
