@@ -125,10 +125,7 @@ returns list of (index tensor axis)"
        ,@(dimension-assertions dimensions)
 
        ;; allocate resulting array or reuse given array 
-       (let (,(if result-array 
-		  `(,result (make-array (* ,@(map 'list #'index-max output-indices))
-					:displaced-to ,result-array
-					:fill-pointer 0))
+       (let (,(if result-array `(,result ,result-array)
 		  `(,result ,(if output-indices
 				 `(make-array (* ,@(map 'list #'index-max output-indices))
 					      :fill-pointer 0)))))
@@ -144,11 +141,14 @@ returns list of (index tensor axis)"
 							      const))
 					    (cond
 					      ((and const remaining-expr) 
-					       `(do (vector-push (* ,const ,(inner-loop remaining-expr)) ,result)))
+					       `(do (setf (aref ,result ,@(map 'list #'index-var output-indices))
+							  (* ,const ,(inner-loop remaining-expr)))))
 					      (remaining-expr
-					       `(do (vector-push ,(inner-loop remaining-expr) ,result)))
+					       `(do (setf (aref ,result ,@(map 'list #'index-var output-indices)) 
+								 ,(inner-loop remaining-expr))))
 					      (const 
-					       `(do (vector-push ,const ,result))))))))
+					       `(do (setf (aref ,result ,@(map 'list #'index-var output-indices))
+							  ,const))))))))
 
 		   (inner-loop% (indices expr const)
 		     (loop-over (first indices)
@@ -178,8 +178,7 @@ returns list of (index tensor axis)"
 	 ;; return the results 
 	 ,(if result-array 
 	      result-array 
-	      `(make-array (list ,@(map 'list #'index-max output-indices)) 
-			   :displaced-to ,result))))))
+	      result)))))
 
 (defmacro einsum ((rhs-indices to lhs-indices) &rest expr)
   "Expand expressions in Einstein's summation notation to loops"
