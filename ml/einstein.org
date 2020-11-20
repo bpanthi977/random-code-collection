@@ -1,0 +1,458 @@
+#+TITLE: Einstein Summation Notation to write loops
+#+AUTHOR: Bibek Panthi 
+#+DATE: November 20, 2020
+* Introduction 
+My target is to be able to write operations on vector, matrices, tensors directly in Einstein summation notation instead of loops. 
+
+#+begin_src lisp 
+  ;; d_i = L_k V^k_i [ 1 - (s^i)^2]
+  (loop for i from 0 below (length di) do
+    (setf (aref d i)
+	  (* (- 1 (expt (aref s i) 2))
+	     (loop for k from 0 below (array-dimension V 1)
+		   summing (* (aref (aref dL/do time) k)
+			      (aref V k i))))))
+#+end_src
+In the end we should be able to replace above expression with: 
+#+begin_src lisp
+  (einsum (ik :to i)
+	  :into d 
+	  (k L) (ki V) (- 1 (expt (i s) 2)))
+#+end_src
+
+We sum over the product of given terms such that indices `i' & `k' are reduce to just `i' and the result is stored in `d'. Notice how similar is the new code to the comment in the original code which describes the mathematics. 
+
+Inside the expressions the indices are associated with tensors using function call notation. These function are purely syntactical and are replaced by corresponding `aref' on the arrays [fn:3]. 
+
+[fn:3] Array in Common Lisp can be multi-dimensional. So in mathematical terms they can be vectors, matrices, or  n-order tensors.
+* Einsum
+#+begin_src lisp
+(defmacro einsum ((rhs-indices to lhs-indices) &rest expr)
+  "Expand expressions in Einstein's summation notation to loops"
+  (assert (eql to :to))
+  (if (eql (first expr) :into)
+      (progn 
+	(assert (symbolp (second expr)))
+	(apply #'einsum% (string rhs-indices) (string lhs-indices) (second expr) (cddr expr)))
+      (apply #'einsum% (string rhs-indices) (string lhs-indices) nil expr)))
+#+end_src
+
+Inside the `einsum' macro we only handle the syntactic structure and use `einsum%' function for bulk of the source code transformation. Also using function makes for easier debuging experience and allows testing from bottom up approach. 
+
+* Overview 
+Let see at the final result to get a general feel of how `einsum' would work. 
+#+begin_src lisp :results value verbatim :exports both
+(macroexpand-1 '(einsum (ik :to i) 
+				:into d
+				(k L) (ki V) (- 1 (expt (i s) 2))))
+#+end_src
+
+#+RESULTS:
+#+begin_example
+(LET ((#:|I-max1360| (ARRAY-DIMENSION S 0))
+      (#:|K-max1361| (ARRAY-DIMENSION V 0)))
+  (ASSERT (= (ARRAY-DIMENSION S 0) (ARRAY-DIMENSION V 1)))
+  (ASSERT (= (ARRAY-DIMENSION V 0) (ARRAY-DIMENSION L 0)))
+  (LET ((#:|result1364|
+         (MAKE-ARRAY (* #:|I-max1360|) :DISPLACED-TO D :FILL-POINTER 0)))
+    (LOOP FOR #:|I-dim1366| FROM 0 BELOW #:|I-max1367|
+          FOR #:|const-expr-1365| = (- 1 (EXPT (AREF S #:|I-dim1368|) 2))
+          DO (VECTOR-PUSH
+              (* #:|const-expr-1365|
+                 (LOOP FOR #:|K-dim1370| FROM 0 BELOW #:|K-max1371|
+                       FOR #:|const-expr-1369| = (* (AREF L #:|K-dim1372|)
+                                                    (AREF V #:|K-dim1373|
+                                                          #:|I-dim1374|))
+                       SUMMING #:|const-expr-1369|))
+              #:|result1364|)))
+  D)
+#+end_example
+
+We can break down the above expanded code into few parts:
++ first variable to store array dimesions are created
++ assertions are added to check that the sizes of the arrays match up
++ a vector with fill pointer is created that would store the result (if an result-array is provided, this vector is displaced to (i.e. points to) that array) 
++ loops over the indices are created. (looping variable are named `-dim-')
+  + outer loops are over the output indices (in this example there is a single outer loops)
+  + in the innermost portion of the outer loop a `vector-push' is used to store the sums into the result array 
+  + the sums are computed in inner-loops (in this example there is only one inner loop)
+  + expression which can be taken out of the loops are computed outside loops and stored in `const-expr-' variable 
+* Index Variables - Dynamic Extend
+
+#+begin_src lisp 
+  (defun einsum% (input-indices output-indices result-array &rest expr)
+    (declare (optimize (debug 3)))
+    (let* ((*indices* (map 'list #'identity input-indices))
+	   (*indices-max* (mapcar (lambda (i) 
+				    (gensym (concatenate 'string (string i) "-max")))
+				  ,*indices*))
+	   (*indices-vars* (mapcar (lambda (i) (gensym (string i))) *indices*))
+#+end_src
+
+We set the indices, variables to be used in loops  (e.g. `#:|I-dim1252|' [fn:2]) and variable to store the dimensions of indices (eg. `#:|I-max1262|')
+
+Values that need to shared between functions are stored in special variables[fn:1] and are bound inside the `einsum%' function.
+
+A `defparameter' in the top-level of the file makes those variable `special'. Another approach could be to using 
+`(declare (special ...))' but I choose the former style for easier testing and debugging.
+
+#+begin_src lisp 
+(defparameter *indices* nil)
+(defparameter *indices-vars* nil)
+(defparameter *indices-max* nil)
+(defparameter *constant-indices* nil)
+#+end_src 
+
+
+#+begin_src lisp 
+(defun index-max (index)
+  "Returns gensymed variable used to denote dimension of `index'"
+  (nth (position index *indices*) *indices-max*))
+
+(defun index-var (index)
+  "Returns gensymed variable used as looping variable of `index'"
+  (nth (position index *indices*) *indices-vars*))
+
+(defun index-function? (symbol)
+  "Checks if the `symbol' could be name of a indexing function"
+  (loop for char across (symbol-name symbol) do 
+	(unless (find char *indices*)
+	  (return nil))
+	finally (return t)))
+#+end_src
+
+[fn:1] Special Variables are variabes with dynamic extend. i.e. they can be assessed inside the other function without the need to be passed along with the function.
+
+[fn:2] Yes! These are variable names. (They are randomly created (using `gensym') during macroexpansion so that their names don't clash with other variables) (Also since they are randomly generated, the exact number at the end may not match within this document)
+
+* Array Dimensions 
+#+Name: einsum-head
+#+begin_src lisp 
+  (defun einsum% (input-indices output-indices result-array &rest expr)
+    (declare (optimize (debug 3)))
+    (let* ((*indices* (map 'list #'identity input-indices))
+	   (*indices-max* (mapcar (lambda (i) 
+				    (gensym (concatenate 'string (string i) "-max")))
+				  ,*indices*))
+	   (*indices-vars* (mapcar (lambda (i) (gensym (string i))) *indices*))
+
+	   (dimensions (walk-for-dimensions (cons '* expr)))
+	   (result (gensym "result")))
+
+      ;; assign max-vars to size of indices
+      `(let (,@(loop for index in *indices*
+		     for max-var = (index-max index)
+		     for dim = (find index dimensions :key #'first)
+		     collect `(,max-var (array-dimension ,(second dim) ,(third dim)))))
+
+	 ;; dimension assertions
+	 ,@(dimension-assertions dimensions)
+#+end_src
+
+`walk-for-dimensions' walks over the given expressinon to find the arrays, their shape and sizes. For example: 
+
+#+begin_src lisp :exports both
+  (let ((*indices* '(#\I #\K)))
+    (walk-for-dimensions '(* (k L) (ki V) (- 1 (expt (j s) 2)))))
+#+end_src
+
+#+RESULTS:
+: ((#\I V 1) (#\K V 0) (#\K L 0))
+
+This return value means that index `i' is the 2nd dimensions of V, index K is the first dimension of V and L.
+
+ #+begin_src lisp 
+   (defun walk-for-dimensions (expr &optional results)
+     "Look at `expr' and find out the which index corresponds to which dimension of which tensor
+   returns list of (index tensor axis)"
+     (cond ((or (atom expr) (not *indices*)) nil)
+	   ((and (listp expr)
+		 (index-function? (first expr))
+		 (= (length expr) 2)
+		 (symbolp (second expr)))
+	    (loop for char across (symbol-name (first expr)) 
+		  for i from 0 do
+		    (pushnew (list char (second expr) i)
+			     results :test #'equal)))
+	   (t (loop for subexpr in expr do 
+	     (setf results (walk-for-dimensions subexpr results)))))
+     results)
+
+   (defun dimension-assertions (dimensions)
+     "return assert forms; `dimesions' is a list of (index tensor axis)"
+     (loop for index in *indices*
+	   when (> (count index dimensions :key #'first) 1)
+	     collect `(assert (= ,@(remove-if #'not 
+					      (mapcar (lambda (dims)
+							(if (eql (first dims) index)
+							    `(array-dimension ,(second dims)
+									      ,(third dims))))
+						      dimensions))))))
+
+ #+end_src
+
+
+* Allocate Result array 
+If the array to store the results (`result-array') is provided then the `result' array would be a pointer to that array otherwise a new array is allocated with size given by product of the dimensions of the output-indices. 
+
+#+Name: einsum-result 
+#+begin_src lisp 
+  ;; allocate resulting array or reuse given array 
+  (let (,(if result-array 
+	     `(,result (make-array (* ,@(map 'list #'index-max output-indices))
+				   :displaced-to ,result-array
+				   :fill-pointer 0))
+	     `(,result ,(if output-indices
+			    `(make-array (* ,@(map 'list #'index-max output-indices))
+					 :fill-pointer 0)))))
+#+end_src
+* Loops 
+** Loop Over 
+To write the outer and inner loops with ease a helper function `loop-over' is defined as follows:
+ #+begin_src lisp 
+   (defun loop-over% (index expr then-function constant-product)
+     (let ((*constant-indices* (cons index *constant-indices*)))
+       (multiple-value-bind (const-expr remaining-expr) (extract-constant-expr expr)							     
+	 (if const-expr 
+	     (let ((var (gensym "const-expr-")))
+	       `(loop for ,(index-var index) from 0 below ,(index-max index) 
+		      for ,var = ,(if constant-product
+				      (expand-arefs `(* ,@const-expr ,constant-product))
+				      (if (= (length const-expr) 1)
+					  (expand-arefs (first const-expr))
+					  (expand-arefs `(* ,@const-expr))))
+		      ,@(funcall then-function remaining-expr var)))
+	     `(loop for ,(index-var index) from 0 below ,(index-max index) 
+		    ,@(funcall then-function remaining-expr constant-product))))))
+
+   (defun loop-over (index &key checking-constants-in then with-constant)
+     "Return a loop form taking care of any expression in `checking-constants-in' 
+    that can be taken out of the loop
+    (loop for index-var from 0 below index-max 
+	  for new-constant = (* with-constant ...) 
+	,@(then remaining-expr new-constant)"  
+     (loop-over% index checking-constants-in then with-constant))
+
+ #+end_src
+
+As an example see this: 
+#+begin_src lisp :results value verbatim :exports both
+  (let* ((input-indices "IK")
+	 (*indices* (map 'list #'identity input-indices))
+	 (*indices-max* (mapcar (lambda (i) 
+				  (gensym (concatenate 'string (string i) "-max")))
+				,*indices*))
+	 (*indices-vars* (mapcar (lambda (i) (gensym (string i))) *indices*)))
+    (loop-over #\I 
+	       :checking-constants-in '((k L) (ki V) (- 1 (expt (i s) 2)))
+	       :then (lambda (remaining-expr const)
+		       `(do (print ,remaining-expr ,const)))
+	       :with-constant nil))
+#+end_src
+
+#+RESULTS:
+: (LOOP FOR #:|I-dim1312| FROM 0 BELOW #:|I-max1313|
+:       FOR #:|const-expr-1311| = (- 1 (EXPT (AREF S #:|I-dim1314|) 2))
+:       DO (PRINT ((K L) (KI V)) #:|const-expr-1311|))
+
+`loop-over' was smart enough to identify that the expression `(- 1 (EXPT (AREF S #:|I-dim1314|) 2))' is constant for given `i' so it stored that in a variable name `#:|const-expr-1311|' and passed the remaining expressions and the name of this variable to the `:then' function. 
+
+In this `loop-over' function few other small functions are used that perform small and easy tasks. 
+*** Utilites used 
+ #+begin_src lisp 
+   (defun expand-arefs (expr)
+     "Repalce indexing functions with aref in the expression `expr'"
+     (cond ((atom expr)
+	    expr)
+	   ((and (listp expr)
+		 (index-function? (first expr))
+		 (= (length expr) 2))
+	    `(aref ,(second expr) ,@(loop for index across (symbol-name (first expr)) 
+					  collect (index-var index))))
+	   ((listp expr)
+	    (mapcar (lambda (e)
+		      (expand-arefs e))
+		    expr))
+	   (t expr)))
+
+   (defun constant-expr? (e)
+     "Returns true if expression `e' is constant when indices in `*constant-indices*' are given"
+     (cond ((atom e) t)
+	   ((and (listp e)
+		 (index-function? (first e)))
+	    (loop for i across (symbol-name (first e)) do 
+	      (if (not (find i *constant-indices*))
+		  (return nil))
+		  finally (return t)))
+	   ((listp e)
+	    (every (lambda (e) 
+		     (constant-expr? e))
+		   (rest e)))
+	   (t t)))
+
+   (defun extract-constant-expr (expr)
+     "Return constant and non-constant parts in `expr' under given `*constant-indices*'"
+     (let* ((non-constant-expr (remove-if (lambda (e)
+					    (constant-expr? e))
+					  expr))
+	    (constant-expr (set-difference expr non-constant-expr)))
+       (values constant-expr non-constant-expr)))
+ #+end_src
+
+
+An exmple of `extract-constant-expr' in action:
+#+begin_src lisp :results value verbatim :exports both 
+  (let ((*indices* '(#\I #\K))
+	(*constant-indices* '(#\I)))
+    (extract-constant-expr '((k L) (ki V) (- 1 (expt (i s) 2)))))
+#+end_src
+#+RESULTS:
+: ((- 1 (EXPT (I S) 2)))
+: ((K L) (KI V))
+
+An example of `expand-arefs' in action
+#+begin_src lisp :results value verbatim :exports both
+  (let ((*indices* '(#\I #\K)))
+      (expand-arefs '(* (k L) (ki V) (- 1 (expt (i s) 2)))))
+#+end_src
+
+#+RESULTS:
+: (* (AREF L #:|K-dim1394|) (AREF V #:|K-dim1395| #:|I-dim1396|)
+:    (- 1 (EXPT (AREF S #:|I-dim1397|) 2)))
+
+
+** Outer and Inner loops 
+Now that we have the convenient loop-over function we can use it to generate the outer and inner loops inside `einsum%'
+
+#+Name: einsum-loops 
+#+begin_src lisp 
+  ;; now loop!! :) 
+  ,(labels ((outer-loop (indices expr const)
+	      (loop-over (first indices)
+			 :with-constant const
+			 :checking-constants-in expr 
+			 :then (lambda (remaining-expr const)
+				 (if (> (length indices) 1)
+				     `(do ,(outer-loop (rest indices)
+						       remaining-expr
+						       const))
+				     (if const 
+					 `(do (vector-push (* ,const ,(inner-loop remaining-expr)) ,result))
+					 `(do (vector-push ,(inner-loop remaining-expr) ,result)))))))
+
+	    (inner-loop% (indices expr const)
+	      (loop-over (first indices)
+			 :checking-constants-in expr
+			 :with-constant const
+			 :then (lambda (remaining-expr const) 
+				 (if (> (length indices) 1)
+				     `(summing ,(inner-loop% (rest indices)
+							remaining-expr 
+							const))
+				     (cond 
+				       ((and const remaining-expr) 
+					`(summing (* ,const ,(expand-arefs `(* ,@remaining-expr)))))
+				       (remaining-expr
+					`(summing ,(expand-arefs `(* ,@remaining-expr))))
+				       (const 
+					`(summing ,const)))))))
+
+	    (inner-loop (expr) 
+	      (inner-loop% (set-difference *indices* (map 'list #'identity output-indices))
+			   expr nil)))
+     (outer-loop (map 'list #'identity output-indices)
+		 expr 
+		 nil))
+#+end_src
+
+The `outer-loop' recursive create a loop form for each outer index. In the `:then' argument if the length of outer indices is greated that 1 i.e. when some outer loops are still to be created `outer-loop' recursively calls itself. Otherwise, it returns a `do' clause with a `vector-push' operation and  calls `inner-loop' to calculate the sums. 
+
+The `inner-loop' computes the indices that need to be summed over (which is the set difference of all indices with the output-indices). Then calls `inner-loop%' which, similar to how `outer-loop' function operates, creates the inner loops recursively summing the product till the end. 
+* Return Result 
+Finally the resulting array is returned. 
+#+name: einsum-output
+#+begin_src lisp 
+  ;; return the results 
+  ,(if result-array 
+       result-array 
+       result))))
+#+end_src
+
+Stiching all the pieces together we have the `einsum%' function: 
+#+ATTR_LATEX: :options basicstyle=\ttfamily\tinyn
+#+begin_src lisp 
+  (defun einsum% (input-indices output-indices result-array &rest expr)
+    (declare (optimize (debug 3)))
+    (let* ((*indices* (map 'list #'identity input-indices))
+	   (*indices-max* (mapcar (lambda (i) 
+				    (gensym (concatenate 'string (string i) "-max")))
+				  ,*indices*))
+	   (*indices-vars* (mapcar (lambda (i) (gensym (string i))) *indices*))
+
+	   (dimensions (walk-for-dimensions (cons '* expr)))
+	   (result (gensym "result")))
+
+      ;; assign max-vars to size of indices
+      `(let (,@(loop for index in *indices*
+		     for max-var = (index-max index)
+		     for dim = (find index dimensions :key #'first)
+		     collect `(,max-var (array-dimension ,(second dim) ,(third dim)))))
+
+	 ;; dimension assertions
+	 ,@(dimension-assertions dimensions)
+
+	 ;; allocate resulting array or reuse given array 
+	 (let (,(if result-array 
+		    `(,result (make-array (* ,@(map 'list #'index-max output-indices))
+					  :displaced-to ,result-array
+					  :fill-pointer 0))
+		    `(,result ,(if output-indices
+				   `(make-array (* ,@(map 'list #'index-max output-indices))
+						:fill-pointer 0)))))
+	   ;; now loop!! :) 
+	   ,(labels ((outer-loop (indices expr const)
+		       (loop-over (first indices)
+				  :with-constant const
+				  :checking-constants-in expr 
+				  :then (lambda (remaining-expr const)
+					  (if (> (length indices) 1)
+					      `(do ,(outer-loop (rest indices)
+								remaining-expr
+								const))
+					      (if const 
+						  `(do (vector-push 
+							(* ,const ,(inner-loop remaining-expr)) ,result))
+						  `(do (vector-push
+							,(inner-loop remaining-expr) ,result)))))))
+
+		     (inner-loop% (indices expr const)
+		       (loop-over (first indices)
+				  :checking-constants-in expr
+				  :with-constant const
+				  :then (lambda (remaining-expr const) 
+					  (if (> (length indices) 1)
+					      (if const 
+						  `(summing (* ,const ,(inner-loop% (rest indices)
+										    remaining-expr nil)))
+						  `(summing ,(inner-loop% (rest indices)
+									 remaining-expr nil)))
+					      (cond 
+						((and const remaining-expr) 
+						 `(summing (* ,const ,(expand-arefs `(* ,@remaining-expr)))))
+						(remaining-expr
+						 `(summing ,(expand-arefs `(* ,@remaining-expr))))
+						(const 
+						 `(summing ,const)))))))
+
+		     (inner-loop (expr) 
+		       (inner-loop% (set-difference *indices* (map 'list #'identity output-indices))
+				    expr nil)))
+	      (outer-loop (map 'list #'identity output-indices)
+			  expr 
+			  nil)))
+	 ;; return the results 
+	 ,(if result-array 
+	      result-array 
+	      result))))
+#+end_src
+* Footnotes
