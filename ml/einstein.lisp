@@ -113,7 +113,7 @@ returns list of (index tensor axis)"
 	 (*indices-vars* (mapcar (lambda (i) (gensym (string i))) *indices*))
 
 	 (dimensions (walk-for-dimensions (cons '* expr)))
-	 (result (gensym "result")))
+	 (result (if result-array result-array (gensym "result"))))
 
     ;; assign max-vars to size of indices
     `(let (,@(loop for index in *indices*
@@ -125,10 +125,9 @@ returns list of (index tensor axis)"
        ,@(dimension-assertions dimensions)
 
        ;; allocate resulting array or reuse given array 
-       (let (,(if result-array `(,result ,result-array)
-		  `(,result ,(if output-indices
-				 `(make-array (* ,@(map 'list #'index-max output-indices))
-					      :fill-pointer 0)))))
+       (let ,(unless result-array 
+		`((,result ,(if output-indices
+			       `(make-array (* ,@(map 'list #'index-max output-indices)))))))
 	 ;; now loop!! :) 
 	 ,(labels ((outer-loop (indices expr const)
 		     (loop-over (first indices)
