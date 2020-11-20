@@ -120,6 +120,7 @@
 	 (n (array-dimension matrix 1))
 	 (result (make-array m :element-type 'double-float :initial-element 0d0
 			       :fill-pointer 0)))
+    (assert (< index n))
     (loop for i from 0 below m do 
       (vector-push (aref matrix i index)
 		   result))
@@ -191,6 +192,15 @@ output `output' from the network, the actual target `y' "
 	    (aref vec-a i)))
     place))
 
+(defun transpose (matrix)
+  (destructuring-bind (m n) (array-dimensions matrix)
+    (let ((new-matrix (make-array (list n m))))
+      (loop for i from 0 below m do
+	(loop for j from 0 below n do
+	  (setf (aref new-matrix j i)
+		(aref matrix i j))))
+      new-matrix)))
+
 (defun matrix-T-dot-vector (matrix vector)
   "Multiply transpose of `matrix' with `vector'"
   (destructuring-bind (m n) (array-dimensions matrix)
@@ -239,6 +249,16 @@ Modify vector `a_i' with' f(a_i,b_i)"
 	     `(modify-indexed ,f ,a ,b))
 	    (t expr))))
 
+
+(defun deindex (y)
+  "Return normal vector from the index vector `y'; assume size = *vocabulary-size*"
+  (warn "Don't use this function directly. This function must be 
+intercepted by compiler macros and converted to efficient code")
+  (let ((result (make-array *vocabulary_size*)))
+    (setf (aref result y) 1)
+    result))
+
+
 (defun bptt (n x y &key (bptt-truncate 4))
   (declare (optimize (debug 3)))
   (check-type n network)
@@ -252,9 +272,9 @@ Modify vector `a_i' with' f(a_i,b_i)"
 	    (di (make-array (array-dimension W 0))))
 
 	;; replace p with dL/do = p - y 
-	(loop for i from 0 below (length p) 
-	      for index across y do
-		(decf (aref (aref p i) index) 1))
+	(map-into p (lambda (p[t] y[t])
+		      (modify #'- p[t] (the integer y[t])))
+		  p y)
 	(setf dL/do p)
 
 	;; for each output backwards
