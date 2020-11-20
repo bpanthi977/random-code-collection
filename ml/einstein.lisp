@@ -142,9 +142,13 @@ returns list of (index tensor axis)"
 					    `(do ,(outer-loop (rest indices)
 							      remaining-expr
 							      const))
-					    (if const 
-						`(do (vector-push (* ,const ,(inner-loop remaining-expr)) ,result))
-						`(do (vector-push ,(inner-loop remaining-expr) ,result)))))))
+					    (cond
+					      ((and const remaining-expr) 
+					       `(do (vector-push (* ,const ,(inner-loop remaining-expr)) ,result)))
+					      (remaining-expr
+					       `(do (vector-push ,(inner-loop remaining-expr) ,result)))
+					      (const 
+					       `(do (vector-push ,const ,result))))))))
 
 		   (inner-loop% (indices expr const)
 		     (loop-over (first indices)
@@ -170,11 +174,12 @@ returns list of (index tensor axis)"
 				  expr nil)))
 	    (outer-loop (map 'list #'identity output-indices)
 			expr 
-			nil)))
-       ;; return the results 
-       ,(if result-array 
-	    result-array 
-	    result))))
+			nil))
+	 ;; return the results 
+	 ,(if result-array 
+	      result-array 
+	      `(make-array (list ,@(map 'list #'index-max output-indices)) 
+			   :displaced-to ,result))))))
 
 (defmacro einsum ((rhs-indices to lhs-indices) &rest expr)
   "Expand expressions in Einstein's summation notation to loops"
