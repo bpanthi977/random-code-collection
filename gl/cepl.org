@@ -1,0 +1,113 @@
+#+TITLE: Graphics with CEPL
+#+ROAM_REF: https://www.youtube.com/watch?v=i66wYiG_5bk&list=PL2VAYZE_4wRITJBv6saaKouj4sWSG1FcS&index=76
+[[mpv:https://www.youtube.com/watch?v=i66wYiG_5bk]]
+from Baggers', Pushing Pixels with Lisp Series. 
+
+* CEPL is OpenGL made Lispy 
+  :PROPERTIES:
+  :time:     0:01:56
+  :END:
+To make feel graphics programming feel like part of standard library. 
+* Like OpenGL, CEPL needs Hosts
+For window creation and OpenGL context creation. 
++ cepl.sdl2
++ cepl.glop <= Lisp only, no need of external C library
+
+Host also provide input 
+* Dependencies 
+** Vario = Lisp to GSLL compiler
+   :PROPERTIES:
+   :time:     0:06:44
+   :END:
+ Vario compiles a subset of Common Lisp to GSLL 
+** rtg-math = Math library used by CEPL internally 
+
+* Package
+#+begin_src lisp  :tangle cepl.lisp :exports both
+  (ql:quickload '(:cepl.sdl2 :nineveh))
+  (defpackage #:cepl-package 
+    (:use #:cl 
+	  #:cepl
+	  #:rtg-math
+	  #:varjo
+	  #:nineveh))
+
+  (in-package :cepl-package)
+#+end_src
+* Data Structures 
+** Buffers are big blocks of bytes
+   :PROPERTIES:
+   :time:     0:14:49
+   :END:
+ the bytes in buffers are of some types and they can be multipel so they are collection array of data of some type. 
+ We abstract buffers with gpu-arrays. 
+
+** Texture is a data structure that holds Images
+   :PROPERTIES:
+   :time:     0:16:17
+   :END:
+
+ Sampler Object reads from texture 
+ Buffer Stream reads from Buffer 
+
+ Pipeline is a list of transformation 
+ and we map a buffer stream over the pipeline 
+ pipeline transforms each point from the buffer stream and while transformation is being performed we can pull things from sampler object 
+
+ Out of Pipeline we get FBO (Frame Buffer Object) which is a gpu-array (a texture)
+
+
+
+
+* Lets play 
+   :PROPERTIES:
+   :time:     0:44:44
+   :END:
+#+begin_src lisp :tangle cepl.lisp :exports both
+  (defvar *gpu-verts-arr* nil)
+  (defvar *gpu-index-arr* nil)
+  (defvar *vert-stream* nil)
+
+  (defun init () 
+    (setf *gpu-verts-arr* 
+	  (make-gpu-array 
+	   (list (v! -0.5 0.5)
+		 (v! -0.5 -0.5)
+		 (v!  0.5 -0.5)
+		 (v!  0.5  0.5))
+	   :element-type :vec2))
+    (setf *gpu-index-arr*
+	  (make-gpu-array (list 0 1 2 0 2 3)
+			  :element-type :int)))
+
+#+end_src
+
+* Rendering Pipeline
+  :PROPERTIES:
+  :time:     0:56:23
+  :DIR:      /home/bpanthi/lisp/rcc/gl/.data/
+  :END:
+[[attachment:mpv-screenshotBLKh78.png]]
+
+From the buffer stream  of vertices, for each vertex the code in vertex shader is called. Then the data moves forward. 
++ Tessellation (optional) (added in GL4) : subdivides triangles into new triangles
++ Geometry Shader (optional) : add new geometry lines, points, triangles
++ Clipping is not under control
++ Rasterization creates fragments
++ fragment shader then runs on every single fragment 
+
+draw-verts-vert-stage takes a vec2 from the buffer stream of vec2 then transforms it but since we have the data as we need, we return without any operation.
+
+1:06:46 draw-verts-frag-stage takes values from vert-stage. vert-stage could return multiple values with (values vert 1 2) in which case frag-stage would get 1 and 2, but we return just vert so the arg is empty. and frag stage returns color for the vertex
+1:08:15 fragment is not pixel because pixels don't have depth, but fragments have depth and other extra details 
+1:08:04 we define pipeline with draw-verts-pipeline
+
+
+
+* pull-g to see the code 
+  :PROPERTIES:
+  :time:     1:10:07
+  :END:
+
+we can see the code just as we can see data by 
+(pull-g '(draw-verts-vert-stage :vec2))
