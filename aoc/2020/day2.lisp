@@ -3,7 +3,16 @@
 
 (in-package :aoc2)
 
-(defparameter +input+ (input 2 :lines))
+(defparameter *input* (input 2 :lines))
+
+(defun count-valid (validp)
+  (let ((valid 0))
+    (ppcre:do-register-groups ((#'parse-integer lo hi) ch pwd)
+        ("(?m)^(\\d+)-(\\d+) (\\w): (\\w+)$"
+         (uiop:read-file-string #P"day02.txt")
+         valid)
+      (when (funcall validp lo hi (char ch 0) pwd)
+         (incf valid)))))
 
 (defun map-row (function lines)
   (let ((scanner (ppcre:create-scanner "(\\d+)-(\\d+) (\\w): (\\w*)")))
@@ -24,7 +33,7 @@
     (map-row (lambda (lower upper char password)
 	       (when (<= lower (count char password) upper)
 		 (incf count)))
-	     +input+)
+	     *input*)
     count))
 
 (defun xor (a b)
@@ -38,6 +47,6 @@
 	       (when (xor (char= (char password (1- lower)) char)
 		   (char= (char password (1- upper)) char))
 		 (incf count)))
-	     +input+)
+	     *input*)
     count))
     
