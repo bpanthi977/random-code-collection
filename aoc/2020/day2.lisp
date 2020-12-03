@@ -5,15 +5,6 @@
 
 (defparameter *input* (input 2 :lines))
 
-(defun count-valid (validp)
-  (let ((valid 0))
-    (ppcre:do-register-groups ((#'parse-integer lo hi) ch pwd)
-        ("(?m)^(\\d+)-(\\d+) (\\w): (\\w+)$"
-         (uiop:read-file-string #P"day02.txt")
-         valid)
-      (when (funcall validp lo hi (char ch 0) pwd)
-         (incf valid)))))
-
 (defun map-row (function lines)
   (let ((scanner (ppcre:create-scanner "(\\d+)-(\\d+) (\\w): (\\w*)")))
     (loop for input in lines do 
