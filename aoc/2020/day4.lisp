@@ -6,14 +6,7 @@
 (defparameter *input* (input 4 :string))
 
 (defun field-number (key) 
-  (alexandria:switch (key :test #'string=)
-    ("byr" 0)
-    ("iyr" 1)
-    ("eyr" 2)
-    ("hgt" 3)
-    ("hcl" 4)
-    ("ecl" 5)
-    ("pid" 6)))
+  (position key '("byr" "iyr" "eyr" "hgt" "hcl" "ecl" "pid") :test #'string=))
 
 (defun valid-field (field-number value)
   (case field-number
