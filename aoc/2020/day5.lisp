@@ -16,14 +16,12 @@
 (defun solve1 ()
   (reduce #'max *input* :key #'id))
 
-(defun solve2 () 
-  (loop with list = (mapcar #'id *input*)
-	for i from 0 below (expt 2 10)
-	with lastfound = nil do 
-	(if (find i list)
-	    (setf lastfound t)
-	    (when lastfound 
-	      (return i)))))
+(defun solve2 ()
+  (let ((seats (make-array (expt 2 10) :element-type 'bit :initial-element 0)))
+    (map 'nil (lambda (input) 
+		(setf (aref seats (id input)) 1)) 
+	 *input*)
+    (1+ (search #*101 seats))))
 
 
     
