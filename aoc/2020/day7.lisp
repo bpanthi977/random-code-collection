@@ -18,7 +18,7 @@
 (defun contents (container)
   (gethash container *contents*))
 
-(defun collect-bags (input &key (start 0))
+(defun parse-bags (input &key (start 0))
   (let ((pos (search "bag" input :start2 start)))
     (when pos 
       (let ((digit-pos (position-if #'digit-char-p input :start start :end pos)))
@@ -28,11 +28,11 @@
 	      (cons (cons n (subseq input
 				    (position-if #'alpha-char-p input :start p)
 				    (1+ (position-if #'alpha-char-p input :end pos :from-end t))))
-		    (collect-bags input :start (1+ pos))))))))
+		    (parse-bags input :start (1+ pos))))))))
 	
 (defun make-graph (input) 
   (loop for i in input
-	for bags = (collect-bags i)
+	for bags = (parse-bags i)
 	for container = (cdr (first bags)) do
 	  (loop for  n.content in (rest bags) do
 	    (when (car n.content)
