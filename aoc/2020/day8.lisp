@@ -11,27 +11,24 @@
 	  for i from 0 
 	  for n = (parse-integer inst :start 3) do 
 	    (setf (aref instructions i) 
-		  (cond ((search "nop" inst)
-			 (list :nop n))
-			((search "acc" inst)
-			 (list :acc n))
-			((search "jmp" inst)
-			 (list :jmp n))
+		  (cond ((search "nop" inst) (list :nop n))
+			((search "acc" inst) (list :acc n))
+			((search "jmp" inst) (list :jmp n))
 			(t (error "Invalid instruction")))))
     instructions))
 
 (defun run (program) 
   (loop with i = 0 
 	with acc = 0 
-	for inst = (aref program i) 
-	unless inst 
+	for (op value) = (aref program i) 
+	unless op 
 	  return (values acc nil)
 	do 
 	   (setf (aref program i) nil)
-	   (case (first inst)
+	   (case op 
 	     (:nop nil)
-	     (:acc (incf acc (second inst)))
-	     (:jmp (incf i (1- (second inst)))))
+	     (:acc (incf acc value))
+	     (:jmp (incf i (1- value))))
 	   (incf i)
 	   (if (= i (1- (length program)))
 	       (return (values acc t)))))
@@ -43,12 +40,12 @@
   "Bruteforce method"
   (let ((program (parse-input *input*)))
     (loop for i from 0 below (length program) 
-	  for inst = (aref program i) do 
-	    (when (member (first inst) (list :nop :jmp))
+	  for (op value) = (aref program i) do 
+	    (when (member op (list :nop :jmp))
 	      (let ((copy (copy-seq program)))
 		(setf (aref copy i)
-		      (if (eql (first inst) :nop) 
-			  (list :jmp (second inst))
+		      (if (eql op :nop) 
+			  (list :jmp value)
 			  (list :nop)))
 		(multiple-value-bind (value natural-termination) (run copy)
 		  (when natural-termination 
