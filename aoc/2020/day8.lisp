@@ -10,14 +10,14 @@
     (loop for inst in input 
 	  for i from 0 
 	  for n = (parse-integer inst :start 3) do 
-      (setf (aref instructions i) 
-	    (cond ((search "nop" inst)
-		   (list :nop n))
-		  ((search "acc" inst)
-		   (list :acc n))
-		  ((search "jmp" inst)
-		   (list :jmp n))
-		  (t (error "Invalid instruction")))))
+	    (setf (aref instructions i) 
+		  (cond ((search "nop" inst)
+			 (list :nop n))
+			((search "acc" inst)
+			 (list :acc n))
+			((search "jmp" inst)
+			 (list :jmp n))
+			(t (error "Invalid instruction")))))
     instructions))
 
 (defun run (program) 
@@ -33,9 +33,9 @@
 	     (:acc (incf acc (second inst)))
 	     (:jmp (incf i (1- (second inst)))))
 	   (incf i)
-	(if (= i (1- (length program)))
-	    (return (values acc t)))))
-	  
+	   (if (= i (1- (length program)))
+	       (return (values acc t)))))
+
 (defun solve1 ()
   (run (parse-input *input*)))
 
