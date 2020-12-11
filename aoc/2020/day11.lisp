@@ -35,12 +35,12 @@
 ;;; Parsing
 (defun parse-input (input)
   (let ((array (make-array (list (length input)
-				 (length (first input)))
-			   :initial-contents input)))
+                                 (length (first input)))
+                           :initial-contents input)))
     (dotimes (i (array-total-size array))
       (setf (row-major-aref array i)
-	    (case (row-major-aref array i)
-	      (#\. :floor) (#\L :empty) (#\# :occupied)
+            (case (row-major-aref array i)
+              (#\. :floor) (#\L :empty) (#\# :occupied)
               (t (error "Unknown cell type")))))
     array))
 
@@ -71,7 +71,7 @@
 
 (defun solve1 ()
   (let* ((grid (parse-input *input*))
-	 (solution (evolve-till-stable #'evolve1 grid)))
+         (solution (evolve-till-stable #'evolve1 grid)))
     (count :occupied (make-array (array-total-size solution) :displaced-to solution))))
 
 ;;; Solution part 2
@@ -97,7 +97,7 @@
 
 (defun solve2 ()
   (let* ((grid (parse-input *input*))
-	 (solution (evolve-till-stable #'evolve2 grid)))
+         (solution (evolve-till-stable #'evolve2 grid)))
     (count :occupied (make-array (array-total-size solution) :displaced-to solution))))
 
 
