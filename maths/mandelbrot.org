@@ -126,7 +126,7 @@ This function will time any function, so I will extract the drawing loop from ~m
 #+RESULTS:
 : MAIN
 
-#+begin_verse
+#+begin_example
  Total  :2.050 sec
  Total  :1.960 sec
  Total  :1.990 sec
@@ -134,7 +134,7 @@ This function will time any function, so I will extract the drawing loop from ~m
  Total  :1.970 sec
  Total  :1.970 sec
  Total  :1.970 sec
-#+end_verse
+#+end_example
 
 It tooks about 2 second for each draw. We can do better. 
 
@@ -162,14 +162,14 @@ Lets add type declaration to ~iterate~ function and ensure that it gets passed v
 #+RESULTS:
 : DIVERGENCE-ITERS
 
-#+begin_verse
+#+begin_example
  Total  :0.550 sec
  Total  :0.460 sec
  Total  :0.460 sec
  Total  :0.470 sec
  Total  :0.460 sec
  Total  :0.460 sec
-#+end_verse
+#+end_example
 
 Simply adding type declarations decreased the runtime by 4 times. This is one of the things I like about Common Lisp. You can quickly iterate with ideas then make it run faster later with not much effort. 
 
@@ -240,13 +240,13 @@ Now I have to distribute the computation/draw part into 8 pieces. For that I mod
 Instead of ~map~-ing over the ~*regions*~ we just ~lparallel:pmap~. It simple as that to do parallel processing. 
 So lets see the results!
 
-#+begin_verse
+#+begin_example
  Total  :0.560 sec
  Total  :0.460 sec
  Total  :0.470 sec
  Total  :0.460 sec
  Total  :0.450 sec
-#+end_verse
+#+end_example
 
 Huh!! Why no change?? This is because with just ~30~ iteration for each pixel, the overhead of drawing and parallizing is significant that that of computing. But all is not in vain. We will get the benefit of this when we need increase iterations while zooming into the plot. (There might be other mathematical techinques for computing mandelbrot set faster when zoomed in, but I didn't search)
 
@@ -260,11 +260,11 @@ Huh!! Why no change?? This is because with just ~30~ iteration for each pixel, t
 #+RESULTS:
 : DIVERGENCE-ITERS
 
-#+begin_verse
+#+begin_example
  Total  :13.800 sec
  Total  :13.590 sec
  Total  :13.620 sec
-#+end_verse
+#+end_example
  Still no benefit!! Lets try decoupling drawing and computing and see if drawing pixels is the bottleneck.
 * Decoupling Drawing and Computing
 #+begin_src lisp
@@ -328,7 +328,7 @@ Let modify ~main~ function to use this setup.
 
 #+RESULTS:
 : MAIN
-#+begin_verse
+#+begin_example
 Computation  :3.480 sec
  Drawing      :0.340 sec
  Computation  :3.070 sec
@@ -341,7 +341,7 @@ Computation  :3.480 sec
  Drawing      :0.350 sec
  Computation  :3.500 sec
  Drawing      :0.350 sec
-#+end_verse
+#+end_example
 
 From 13 seconds to around 3.3 seconds! Its good. Seems like drawing a pixel is a blocking activity or something like that (I din't dig into it further). So, performing all computation in different cores then drawing all at onces is better. 
 
@@ -417,7 +417,7 @@ From 13 seconds to around 3.3 seconds! Its good. Seems like drawing a pixel is a
 
 ~*scale*~ and ~*translation*~ hold the current transformation, ~compute%~ uses ~transform~ function to transform x,y to desired complex number and finally ~main~ is update to respond to certain key-presses for translation and scaling.
 
-#+begin_verse
+#+begin_example
 Calculate : 0.250 sec
 Draw      : 0.430 sec
 Calculate : 0.050 sec
@@ -428,7 +428,7 @@ Calculate : 0.050 sec
 Draw      : 0.370 sec
 Calculate : 0.050 sec
 Draw      : 0.370 sec
-#+end_verse
+#+end_example
 
 This is all good! But I am still not happy with the 350ms it takes to draw each frame. 
 We will have to directly access the surface buffer to write pixel colors in bulk. But lispbuilder-sdl doesn't directly provide this feature (or at least I don't know that), rather lispbuilder-sdl requires us to use opengl. 
