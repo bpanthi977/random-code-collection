@@ -1,79 +1,87 @@
 (ql:quickload :lispbuilder-sdl)
+(ql:quickload :cl-opengl)
 (ql:quickload :lparallel)
 
-(defparameter *scale* 0.2)
-(defparameter *translation* (complex -200 -300))
-(defparameter *memory* (make-hash-table :test #'eql))
+(defparameter *width* 1200)
+(defparameter *height* 700)
+(defparameter *scale* 3e-3)
+(defparameter *translation* (complex 0 0))
+
+;; initialize 8 lparallel kernels 
 (defparameter lparallel:*kernel* (lparallel:make-kernel 8))
+(defparameter *regions* (let ((stepx (/ *width* 2))
+			      (stepy (/ *height* 4)))
+			  (loop for x0 from 0 to (- *width* stepx) by stepx
+				with regions = nil do 
+				  (loop for y0 from 0 to (- *height* stepy) by stepy
+					do (push (mapcar (lambda (i) (truncate i))
+							 (list x0 (+ x0 stepx)
+							       y0 (+ y0 stepy)))
+						 regions))
+				finally (return regions))))
+
 (deftype color ()
-  '(integer 0 256))
-(defparameter *buffer* (make-array (list 1201 701 3)
+  '(unsigned-byte 8))
+(defparameter *buffer-base* (make-array (* *height* *width* 3) :element-type 'color))
+(defparameter *buffer* (make-array (list *height* *width* 3)
 				   :element-type 'color
-				   :initial-element 0))
+				   :displaced-to *buffer-base*))
 
+;;; Mandelbrot Set Computations 
 
-(defun iterate (c iterations)
+(defun iterate (c iterations limit)
   (declare (optimize (speed 3) (safety 0) (debug 0)))
   (declare ((complex single-float) c)
 	   (fixnum iterations))
-  (let ((f c)
-	(limit 500))
+  (let ((f c))
     (declare ((complex single-float) f)
-	     (fixnum limit))
+	     (single-float limit))
     (dotimes (iters iterations f)
       (setf f (+ (expt f 2) c))
       (when (> (abs f) limit)
 	(return-from iterate iters)))
     nil))
 
-
-(defun belongs-to-mandelbrot (c)
+(defun divergence-iters (c)
+  "Number of iterations it took for `c' to diverge. NIL for `c' that belongs to madelbrot set"
   (iterate c
-	   30))
+	   30
+	   50.0))
 
-(defun translate (x y)
+(defun transform (x y)
   (declare (optimize (speed 3) (safety 0) (debug 0)))
   (declare (fixnum x y)
 	   ((complex fixnum) *translation*)
 	   (single-float *scale*))
-  (complex (* *scale* (the fixnum (+ (realpart *translation*) x)))
-	   (* *scale* (the fixnum (+ (imagpart *translation*) y)))))
+  (+ *translation* (complex (* *scale* (the fixnum (- x 800)))
+			    (* *scale* (the fixnum (- y 350))))))
 
-(defun calculate% (x0 x1 y0 y1) 
+(defun compute% (x0 x1 y0 y1) 
   (loop for x from x0 below x1 do
     (loop for y from y0 below y1 
-	  for value =  (belongs-to-mandelbrot (translate x y)) do
+	  for value =  (divergence-iters (transform x y)) do
 	    (if value 
-	      ;; (sdl:draw-pixel-* x y :color
-	      ;;  			(sdl:color :g (max 0 (min 255 (- (* 2 value)))) :b (min 255 (* 10 value)) :r (min  255 (* 20 value))))
-	      (setf (aref *buffer* x y 0) (min  255 (* 20 value))
-		    (aref *buffer* x y 1) (max 0 (min 255 (- (* 2 value))))
-		    (aref *buffer* x y 2) (min 255 (* 10 value)))
-	      (setf (aref *buffer* x y 0) 0
-		    (aref *buffer* x y 1) 0
-		    (aref *buffer* x y 2) 0))
-	  ))))
+		;; when not in set, color the pixel
+		(setf (aref *buffer* y x 0) (max 0 (min 255 (* 20 (abs value))))
+		      (aref *buffer* y x 1) 0
+		      (aref *buffer* y x 2) 0)
+		;; when in set, just set to white color
+		(setf (aref *buffer* y x 0) 0
+		      (aref *buffer* y x 1) 0
+		      (aref *buffer* y x 2) 0)))))
 
-(defun calculate (&aux
-		(stepx (/ 1200 2))
-		(stepy (/ 700 4)))
-  (lparallel:pmap nil (lambda (region)
-			(apply #'calculate% region))
-		  (loop for x0 from 0 to (- 1200 stepx) by stepx
-			with regions = nil do 
-			  (loop for y0 from 0 to (- 700 stepy) by stepy
-				do (push (mapcar (lambda (i) (truncate i))
-						 (list x0 (+ x0 stepx)
-						       y0 (+ y0 stepy)))
-					 regions))
-			finally (return regions))))
+(defun compute ()
+  (lparallel:pmap nil 
+		  (lambda (region)
+		    (apply #'compute% region))
+		  *regions*))
 
+;;; Drawing 
 (defun draw ()
-  (loop for x from 0 to 1200 do
-    (loop for y from 0 to 700 do
-      (sdl:draw-pixel-* x y :color (sdl:color :r (aref *buffer* x y 0)
-					      :g (aref *buffer* x y 1)
-					      :b (aref *buffer* x y 2))))))
+  (gl:draw-pixels *width* *height*
+		  :rgb
+		  :unsigned-byte
+		  *buffer-base*))
 
 (defun timing (function)
   (let ((t1 (get-internal-real-time)))
@@ -83,7 +91,7 @@
 
 (defun main ()
   (sdl:with-init ()
-    (sdl:window 1200 700 :resizable t :title-caption "Mandelbrot Set")
+    (sdl:window 1200 700 :resizable t :title-caption "Mandelbrot Set" :opengl t)
     (setf sdl:*default-color* sdl:*black*)
     (sdl:initialise-default-font)
     (sdl:enable-key-repeat 100 10)
@@ -98,13 +106,13 @@
 	 (:sdl-key-k
 	  (setf *scale* (/ *scale* 1.2)))
 	 (:sdl-key-a
-	  (incf *translation* #C(20 0)))
+	  (incf *translation* (* *scale* #C(20 0))))
 	 (:sdl-key-d
-	  (decf *translation* #C(20 0)))
+	  (decf *translation* (* *scale* #C(20 0))))
 	 (:sdl-key-w
-	  (incf *translation* #C(0 20)))
+	  (incf *translation* (* *scale* #C(0 20))))
 	 (:sdl-key-s
-	  (decf *translation* #C(0 20)))))
+	  (decf *translation* (* *scale* #C(0 20))))))
 
       (:idle
        ()

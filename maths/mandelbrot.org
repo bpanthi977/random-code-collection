@@ -10,46 +10,95 @@ i.e. to check if the number c = 3+2i belongs to the Mandelbrot set, we iterate a
 
 And if the final result is inifinty then $c$ doesn't blong to Mandelbrot set. 
 
+* Code
+** Check if a complex ~c~ is in Mandelbrot set
 #+begin_src lisp
   (defun iterate (c iterations limit)
-    (loop repeat iterations 
-	  for f = c then (+ (expt f 2) c)
-	  when (> (abs f) limit)
-	    return nil
-	  finally (return f)))
+    (let ((f c))
+      (dotimes (iters iterations nil)
+	(setf f (+ (expt f 2) c))
+	(when (> (abs f) limit)
+	  (return-from iterate iters)))))
 #+end_src
 
-* Lets plot then
+#+RESULTS:
+: ITERATE
 
-#+begin_src lisp
-  (ql:quickload :lispbuilder-sdl)
+This function iterates for maximum of ~iterations~ times and if the result of iterating with ~c~ exceed ~limit~ (which signifies divergence to infinity) then it returns the number of iterations it took for it to diverge. Otherwise it return ~NIL~ which means ~c~ belongs to Mandelbrot set. 
 
-  (defparameter *scale* 100.0)
-  (defparameter *translation* (complex 0 0))
-  (defparameter *memory* (make-hash-table :test #'eql))
+#+begin_src lisp :results output
+  (print (iterate (complex 0 0) 10 50))
+  (print (iterate (complex 1 1) 10 50))
+#+end_src
 
-  (defun iterate (c iterations limit)
-    (declare (optimize (speed 3) (safety 0) (debug 0)))
-    (declare ((complex single-float) c)
-	     (fixnum iterations limit))
-    (loop repeat iterations 
-	  for f complex = c then (+ (expt f 2) c)
-	  when (> (abs f) limit)
-	    return nil
-	  finally (return f)))
+#+RESULTS:
+: 
+: NIL 
+: 2 
 
-  (defun belongs-to-mandelbrot (c)
-    (iterate c
-	     1000
-	     50))
+So, 0+0i lies in mandelbrot set, while 1+1i takes 2 iterations of the value to exceed 50 (which we will consider as not being in Mandelbrot set)
 
+** Plotting the set
+   :PROPERTIES:
+   :DIR:      /mnt/Data/Development/lisp/rcc/maths/.data/
+   :END:
+   #+begin_src lisp
+     (defun divergence-iters (c)
+       (iterate (* 2e-3 (- c #C(800 350)))
+		30
+		5))
 
-  (defun translate (x y)
-    (declare (optimize (speed 3) (safety 0) (debug 0)))
-    (declare (integer x y)
-	     ((complex integer) *translation*)
-	     (single-float *scale*))
-    (* *scale* (the (complex integer) (+ *translation* (complex x y)))))
+     (defun main ()
+       (sdl:with-init ()
+	 (sdl:window 1200 700 :resizable t :title-caption "Mandelbrot Set")
+	 (setf sdl:*default-color* sdl:*black*)
+	 (sdl:initialise-default-font)
+	 (sdl:with-events ()
+	   (:quit-event () t)
+	   (:idle
+	    ()
+	    ;; Clear screen
+	    (sdl:clear-display sdl:*white*)
+	    ;; drawing
+	    (loop for x from 0 to 1200 do
+		  (loop for y from 0 to 700
+			for value =  (divergence-iters (complex x y)) do
+			  (when value 
+			    (sdl:draw-pixel-* x y :color
+					      (sdl:color :g 0 :b 0 :r (max 0 (min 255 (* 20 (abs value)))))))))
+
+	    (sdl:update-display)))))
+   #+end_src
+
+   #+RESULTS:
+   : MAIN
+
+Here i subtracted 800 + 350i from position x+yi to center the plot and scaled it with 2e-3 so that we would be looking at something interesting rather than all black or red portion of the plot. 
+
+#+CAPTION: first-mandelbrot
+[[attachment:20201217222331-first_mandelbrot.png]]
+
+See!! we did it!
+Lets look at how fast our code runs.
+
+#+begin_src lisp 
+  (defun timing (function)
+    "Runs the given `function' and returns the seconds it took to run it"
+    (let ((t1 (get-internal-real-time)))
+      (funcall function)
+      (/ (- (get-internal-real-time) t1)
+	 internal-time-units-per-second)))
+#+end_src
+This function will time any function, so I will extract the drawing loop into a function and print time timing. 
+
+#+begin_src lisp 
+  (defun draw ()
+    (loop for x from 0 to 1200 do
+      (loop for y from 0 to 700
+	    for value =  (divergence-iters (complex x y)) do
+	      (when value 
+		(sdl:draw-pixel-* x y :color
+				  (sdl:color :g 0 :b 0 :r (max 0 (min 255 (* 20 (abs value))))))))))
 
   (defun main ()
     (sdl:with-init ()
@@ -58,35 +107,353 @@ And if the final result is inifinty then $c$ doesn't blong to Mandelbrot set.
       (sdl:initialise-default-font)
       (sdl:with-events ()
 	(:quit-event () t)
+	(:idle
+	 ()
+	 ;; Clear screen
+	 (sdl:clear-display sdl:*white*)
+	 ;; drawing
+	 (format t "~& Total  :~,3f sec" (timing #'draw))
+	 ;; updating display
+	 (sdl:update-display)))))
+#+end_src
+
+#+RESULTS:
+: MAIN
+
+#+begin_verse
+ Total  :2.050 sec
+ Total  :1.960 sec
+ Total  :1.990 sec
+ Total  :1.960 sec
+ Total  :1.970 sec
+ Total  :1.970 sec
+ Total  :1.970 sec
+#+end_verse
+
+It tooks about 2 second for each draw. We can do better. 
+
+** Optimization 
+Lets add type declaration to ~iterate~ function and ensure that it gets passed values with correct type. 
+#+begin_src lisp 
+  (defun iterate (c iterations limit)
+    (declare (optimize (speed 3) (safety 0) (debug 0)))
+    (declare ((complex single-float) c)
+	     (fixnum iterations)
+	     (single-float limit))
+    (let ((f c))
+      (declare ((complex single-float) f))
+      (dotimes (iters iterations nil)
+	(setf f (+ (expt f 2) c))
+	(when (> (abs f) limit)
+	  (return-from iterate iters)))))
+
+  (defun divergence-iters (c)
+    (iterate (* 2e-3 (- c #C(800.0 350.0)))
+	     30
+	     5.0))
+#+end_src
+
+#+RESULTS:
+: DIVERGENCE-ITERS
+
+#+begin_verse
+ Total  :0.550 sec
+ Total  :0.460 sec
+ Total  :0.460 sec
+ Total  :0.470 sec
+ Total  :0.460 sec
+ Total  :0.460 sec
+#+end_verse
+
+Simply adding type declarations decreased the runtime by 4 times. This is one of the things I like about Common Lisp. You can quickly iterate with ideas then make it run faster later with not much effort. 
+
+Lets see if we can go little more further. 
+
+Note that these timing are for 30 iterations and with limit value of 5.0. When we zoom into the plot we will need to increase the iterations and these timing would change accordingly. 
+
+** Parallel Computation 
+   lparallel library can be used to run the computations in parallel. 
+
+#+begin_src lisp
+  (defparameter lparallel:*kernel* (lparallel:make-kernel 8))
+  (defparameter *width* 1200)
+  (defparameter *height* 700)
+  (defparameter *regions* (let ((stepx (/ *width* 2))
+				(stepy (/ *height* 4)))
+			    (loop for x0 from 0 to (- *width* stepx) by stepx
+				  with regions = nil do 
+				    (loop for y0 from 0 to (- *height* stepy) by stepy
+					  do (push (mapcar (lambda (i) (truncate i))
+							   (list x0 (+ x0 stepx)
+								 y0 (+ y0 stepy)))
+						   regions))
+				  finally (return regions))))
+#+end_src
+
+#+RESULTS:
+: *REGIONS*
+
+My laptop has 8 cores, so I made 8 computation kernels and divided the screen into 8 regions (as shown in table below). 
+#+begin_src lisp
+  `(("X0" "X1" "Y1" "Y2")
+    ,@(reverse *regions*))
+#+end_src
+
+#+RESULTS:
+|  X0 |   X1 |  Y1 |  Y2 |
+|   0 |  600 |   0 | 175 |
+|   0 |  600 | 175 | 350 |
+|   0 |  600 | 350 | 525 |
+|   0 |  600 | 525 | 700 |
+| 600 | 1200 |   0 | 175 |
+| 600 | 1200 | 175 | 350 |
+| 600 | 1200 | 350 | 525 |
+| 600 | 1200 | 525 | 700 |
+
+Now I have to distribute the computation/draw part into 8 pieces. For that I modify the ~draw~ function as:
+#+begin_src lisp
+  (defun draw% (x0 x1 y0 y1) 
+    (loop for x from x0 below x1 do
+      (loop for y from y0 below y1 
+	    for value =  (divergence-iters (complex x y)) do
+	      (when value 
+		(sdl:draw-pixel-* x y :color
+				  (sdl:color :g 0 :b 0 :r (max 0 (min 255 (* 20 (abs value))))))))))
+
+
+  (defun draw ()
+    (lparallel:pmap nil 
+		    (lambda (region)
+		      (apply #'draw% region))
+		    ,*regions*))
+#+end_src
+
+#+RESULTS:
+: DRAW
+
+Instead of ~map~-ing over the ~*regions*~ we just ~lparallel:pmap~. Simple as that to do parallel processing. 
+So lets see the results!
+
+#+begin_verse
+ Total  :0.560 sec
+ Total  :0.460 sec
+ Total  :0.470 sec
+ Total  :0.460 sec
+ Total  :0.450 sec
+#+end_verse
+
+Huh!! Why no change?? This is because with just ~30~ iteration for each pixel, the overhead of drawing and parallizing is significant that that of computing. But all is not in vain. We will get the benefit of this when we increase iterations. 
+
+#+begin_src lisp
+  (defun divergence-iters (c)
+      (iterate (* 2e-3 (- c #C(800.0 350.0)))
+	       3000
+	       5.0))
+#+end_src
+
+#+RESULTS:
+: DIVERGENCE-ITERS
+
+#+begin_verse
+ Total  :13.800 sec
+ Total  :13.590 sec
+ Total  :13.620 sec
+#+end_verse
+ Still no benefit!! Lets try decoupling drawing and computing and see if drawing pixels is the bottleneck.
+** Decoupling Drawing and Computing
+#+begin_src lisp
+  (deftype color ()
+    '(unsigned-byte 8))
+
+  (defparameter *buffer* (make-array (list *height* *width* 3)
+				     :element-type 'color))
+
+  (defun compute% (x0 x1 y0 y1) 
+    (loop for x from x0 below x1 do
+      (loop for y from y0 below y1 
+	    for value =  (divergence-iters (complex x y)) do
+	      (if value 
+		  ;; when not in set, color the pixel
+		  (setf (aref *buffer* y x 0) (max 0 (min 255 (* 20 (abs value))))
+			(aref *buffer* y x 1) 0
+			(aref *buffer* y x 2) 0)
+		  ;; when in set, just set to white color
+		  (setf (aref *buffer* y x 0) 0
+			(aref *buffer* y x 1) 0
+			(aref *buffer* y x 2) 0)))))
+
+  (defun compute ()
+    (lparallel:pmap nil 
+		    (lambda (region)
+		      (apply #'compute% region))
+		    ,*regions*))
+
+  (defun draw ()
+    (loop for x from 0 below *width* do
+      (loop for y from 0 below *height* do
+	(sdl:draw-pixel-* x y :color (sdl:color :r (aref *buffer* y x 0)
+						:g (aref *buffer* y x 1)
+						:b (aref *buffer* y x 2))))))
+#+end_src
+
+#+RESULTS:
+: DRAW
+
+I have now created ~*buffer*~ variable to hold the pixel colors. Then separated the computation and drawing part. 
+Let modify ~main~ function to use this setup. 
+#+begin_src lisp
+  (defun main ()
+    (sdl:with-init ()
+      (sdl:window 1200 700 :resizable t :title-caption "Mandelbrot Set")
+      (setf sdl:*default-color* sdl:*black*)
+      (sdl:initialise-default-font)
+      (sdl:with-events ()
+	(:quit-event () t)
+	(:idle
+	 ()
+	 ;; Clear screen
+	 (sdl:clear-display sdl:*white*)
+	 ;; drawing
+	 (format t "~& Computation  :~,3f sec" (timing #'compute))
+	 (format t "~& Drawing      :~,3f sec" (timing #'draw))
+	 ;; updating display
+	 (sdl:update-display)))))
+#+end_src
+
+#+RESULTS:
+: MAIN
+#+begin_verse
+Computation  :3.480 sec
+ Drawing      :0.340 sec
+ Computation  :3.070 sec
+ Drawing      :0.360 sec
+ Computation  :3.030 sec
+ Drawing      :0.350 sec
+ Computation  :3.360 sec
+ Drawing      :0.350 sec
+ Computation  :3.310 sec
+ Drawing      :0.350 sec
+ Computation  :3.500 sec
+ Drawing      :0.350 sec
+#+end_verse
+
+From 13 seconds to around 3.3 seconds! Its good. Seems like drawing a pixel is a blocking activity or something like that (I din't dig into it further). So, performing all computation in different cores then drawing all at onces is better. 
+
+** Lets add translation and scaling! 
+#+begin_src lisp
+  (defparameter *scale* 3e-3)
+  (defparameter *translation* (complex 0 0))
+
+  (defun divergence-iters (c)
+    (iterate c
+	     30
+	     50.0))
+
+  (defun transform (x y)
+    (declare (optimize (speed 3) (safety 0) (debug 0)))
+    (declare (fixnum x y)
+	     ((complex fixnum) *translation*)
+	     (single-float *scale*))
+    (+ *translation* (complex (* *scale* (the fixnum (- x 800)))
+			      (* *scale* (the fixnum (- y 350))))))
+
+  (defun compute% (x0 x1 y0 y1) 
+    (loop for x from x0 below x1 do
+      (loop for y from y0 below y1 
+	    for value =  (divergence-iters (transform x y)) do
+	      (if value 
+		  ;; when not in set, color the pixel
+		  (setf (aref *buffer* y x 0) (max 0 (min 255 (* 20 (abs value))))
+			(aref *buffer* y x 1) 0
+			(aref *buffer* y x 2) 0)
+		  ;; when in set, just set to white color
+		  (setf (aref *buffer* y x 0) 0
+			(aref *buffer* y x 1) 0
+			(aref *buffer* y x 2) 0)))))
+
+  (defun main ()
+    (sdl:with-init ()
+      (sdl:window 1200 700 :resizable t :title-caption "Mandelbrot Set")
+      (setf sdl:*default-color* sdl:*black*)
+      (sdl:initialise-default-font)
+      (sdl:enable-key-repeat 100 10)
+      (sdl:with-events ()
+	(:quit-event () t)
 	(:key-down-event
-	   (:key key)
-	   (case key
-	     (:sdl-key-q (sdl:push-quit-event))
-	     (:sdl-key-l
-	      (setf *scale* (* *scale* 1.2)))
-	     (:sdl-key-k
-	      (setf *scale* (/ *scale* 1.2)))
-	     (:sdl-key-a
-	      (incf *translation* #C(20 0)))
-	     (:sdl-key-d
-	      (decf *translation* #C(20 0)))
-	     (:sdl-key-w
-	      (incf *translation* #C(0 20)))
-	     (:sdl-key-s
-	      (decf *translation* #C(0 20)))))
+	 (:key key)
+	 (case key
+	   (:sdl-key-q (sdl:push-quit-event))
+	   (:sdl-key-l
+	    (setf *scale* (* *scale* 1.2)))
+	   (:sdl-key-k
+	    (setf *scale* (/ *scale* 1.2)))
+	   (:sdl-key-a
+	    (incf *translation* (* *scale* #C(20 0))))
+	   (:sdl-key-d
+	    (decf *translation* (* *scale* #C(20 0))))
+	   (:sdl-key-w
+	    (incf *translation* (* *scale* #C(0 20))))
+	   (:sdl-key-s
+	    (decf *translation* (* *scale* #C(0 20))))))
 
 	(:idle
 	 ()
 	 ;; Clear screen
 	 (sdl:clear-display sdl:*white*)
 	 ;; drawing
-	 (loop for x from 0 to 1200 do
-	       (loop for y from 0 to 700
-		     for value =  (belongs-to-mandelbrot (translate x y)) do
-		       (when value 
-			 (sdl:draw-pixel-* x y :color
-					   (sdl:color :g 0 :b 0 :r (max 0 (min 255 (* 200 (abs value)))))))))
-
+	 (format t "~&Calculate : ~,3f sec" (timing #'compute))
+	 (format t "~&Draw      : ~,3f sec" (timing #'draw))
 	 (sdl:update-display)
 	 ))))
 #+end_src
+
+#+RESULTS:
+: MAIN
+
+~*scale*~ and ~*translation*~ hold the current transformation, ~compute%~ uses ~transform~ function to transform x,y to desired complex number and finally ~main~ is update to respond to certain key-presses for translation and scaling.
+
+#+begin_verse
+Calculate : 0.250 sec
+Draw      : 0.430 sec
+Calculate : 0.050 sec
+Draw      : 0.350 sec
+Calculate : 0.050 sec
+Draw      : 0.360 sec
+Calculate : 0.050 sec
+Draw      : 0.370 sec
+Calculate : 0.050 sec
+Draw      : 0.370 sec
+#+end_verse
+
+This is all good! But I am still not happy with the 350ms it takes to draw each frame. 
+We will have to directly access the surface buffer to write pixel colors in bulk. But lispbuilder-sdl doesn't directly provide this feature (or at least I don't know that), rather lispbuilder-sdl requires us to use opengl. 
+
+** OpenGL
+#+begin_src lisp
+  (defparameter *buffer-base* (make-array (* *height* *width* 3) :element-type 'color))
+  (defparameter *buffer* (make-array (list *height* *width* 3)
+				     :element-type 'color
+				     :displaced-to *buffer-base*))
+
+  (defun draw ()
+    (gl:draw-pixels *width* *height*
+		    :rgb
+		    :unsigned-byte
+		    ,*buffer-base*))
+#+end_src
+
+#+RESULTS:
+: DRAW
+
+cl-opengl's ~draw-pixels~ takes five arguments width and height of the data, format of pixel data (we have rgb), and type of data (unsigned-bytes). Also note that it expects a simple-vector i.e. a one-dimensional array. But our ~*buffer*~ was a multidimensional array. Here the displaced-array feature of Common Lisp comes to resuce. We create a 1d array (~~*buffer-base*~) of size ~width * height * 3~ then define ~*buffer*~ as a 3d array displaced to that array. This way we won't have to change the code we wrote before. 
+
+Finally, we change ~main~ and tell sdl to allow us to use opengl. 
+#+begin_src lisp
+  (defun main ()
+    (sdl:with-init ()
+      (sdl:window 1200 700 :resizable t :title-caption "Mandelbrot Set" :opengl t)
+      ...))
+#+end_src
+
+
+** Finally
