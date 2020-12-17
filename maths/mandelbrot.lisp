@@ -106,13 +106,13 @@
 	 (:sdl-key-k
 	  (setf *scale* (/ *scale* 1.2)))
 	 (:sdl-key-a
-	  (incf *translation* (* *scale* #C(20 0))))
+	  (incf *translation* (* *scale* #C(-20 0))))
 	 (:sdl-key-d
-	  (decf *translation* (* *scale* #C(20 0))))
+	  (incf *translation* (* *scale* #C(20 0))))
 	 (:sdl-key-w
-	  (incf *translation* (* *scale* #C(0 20))))
+	  (incf *translation* (* *scale* #C(0 -20))))
 	 (:sdl-key-s
-	  (decf *translation* (* *scale* #C(0 20))))))
+	  (incf *translation* (* *scale* #C(0 -20))))))
 
       (:idle
        ()

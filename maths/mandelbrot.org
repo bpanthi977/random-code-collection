@@ -1,3 +1,10 @@
+#+TITLE: Mandelbrot Set Plotting in Common Lisp 
+#+Author: Bibek Panthi
+#+DATE: December 17, 2020
+
+\newpage
+
+* Definition 
 From [[https://en.wikipedia.org/wiki/Mandelbrot_set][Wikipedia]]:
 
 The Mandelbrot set is the set of complex numbers $c$ for which the function $f_c(z)= z^2+c$ doesn't diverge when iterated from $z=0$. 
@@ -10,8 +17,7 @@ i.e. to check if the number c = 3+2i belongs to the Mandelbrot set, we iterate a
 
 And if the final result is inifinty then $c$ doesn't blong to Mandelbrot set. 
 
-* Code
-** Check if a complex ~c~ is in Mandelbrot set
+* Check if a complex ~c~ is in Mandelbrot set
 #+begin_src lisp
   (defun iterate (c iterations limit)
     (let ((f c))
@@ -26,7 +32,7 @@ And if the final result is inifinty then $c$ doesn't blong to Mandelbrot set.
 
 This function iterates for maximum of ~iterations~ times and if the result of iterating with ~c~ exceed ~limit~ (which signifies divergence to infinity) then it returns the number of iterations it took for it to diverge. Otherwise it return ~NIL~ which means ~c~ belongs to Mandelbrot set. 
 
-#+begin_src lisp :results output
+#+begin_src lisp :results output :exports both
   (print (iterate (complex 0 0) 10 50))
   (print (iterate (complex 1 1) 10 50))
 #+end_src
@@ -38,7 +44,7 @@ This function iterates for maximum of ~iterations~ times and if the result of it
 
 So, 0+0i lies in mandelbrot set, while 1+1i takes 2 iterations of the value to exceed 50 (which we will consider as not being in Mandelbrot set)
 
-** Plotting the set
+* Plotting the set
    :PROPERTIES:
    :DIR:      /mnt/Data/Development/lisp/rcc/maths/.data/
    :END:
@@ -78,7 +84,7 @@ Here i subtracted 800 + 350i from position x+yi to center the plot and scaled it
 #+CAPTION: first-mandelbrot
 [[attachment:20201217222331-first_mandelbrot.png]]
 
-See!! we did it!
+See!! we did it! This was so easy.
 Lets look at how fast our code runs.
 
 #+begin_src lisp 
@@ -89,7 +95,7 @@ Lets look at how fast our code runs.
       (/ (- (get-internal-real-time) t1)
 	 internal-time-units-per-second)))
 #+end_src
-This function will time any function, so I will extract the drawing loop into a function and print time timing. 
+This function will time any function, so I will extract the drawing loop from ~main~ function into ~draw~ function and print timing. 
 
 #+begin_src lisp 
   (defun draw ()
@@ -132,7 +138,7 @@ This function will time any function, so I will extract the drawing loop into a 
 
 It tooks about 2 second for each draw. We can do better. 
 
-** Optimization 
+* Optimization 
 Lets add type declaration to ~iterate~ function and ensure that it gets passed values with correct type. 
 #+begin_src lisp 
   (defun iterate (c iterations limit)
@@ -171,7 +177,7 @@ Lets see if we can go little more further.
 
 Note that these timing are for 30 iterations and with limit value of 5.0. When we zoom into the plot we will need to increase the iterations and these timing would change accordingly. 
 
-** Parallel Computation 
+* Parallel Computation 
    lparallel library can be used to run the computations in parallel. 
 
 #+begin_src lisp
@@ -194,7 +200,7 @@ Note that these timing are for 30 iterations and with limit value of 5.0. When w
 : *REGIONS*
 
 My laptop has 8 cores, so I made 8 computation kernels and divided the screen into 8 regions (as shown in table below). 
-#+begin_src lisp
+#+begin_src lisp :exports both
   `(("X0" "X1" "Y1" "Y2")
     ,@(reverse *regions*))
 #+end_src
@@ -231,7 +237,7 @@ Now I have to distribute the computation/draw part into 8 pieces. For that I mod
 #+RESULTS:
 : DRAW
 
-Instead of ~map~-ing over the ~*regions*~ we just ~lparallel:pmap~. Simple as that to do parallel processing. 
+Instead of ~map~-ing over the ~*regions*~ we just ~lparallel:pmap~. It simple as that to do parallel processing. 
 So lets see the results!
 
 #+begin_verse
@@ -242,7 +248,7 @@ So lets see the results!
  Total  :0.450 sec
 #+end_verse
 
-Huh!! Why no change?? This is because with just ~30~ iteration for each pixel, the overhead of drawing and parallizing is significant that that of computing. But all is not in vain. We will get the benefit of this when we increase iterations. 
+Huh!! Why no change?? This is because with just ~30~ iteration for each pixel, the overhead of drawing and parallizing is significant that that of computing. But all is not in vain. We will get the benefit of this when we need increase iterations while zooming into the plot. (There might be other mathematical techinques for computing mandelbrot set faster when zoomed in, but I didn't search)
 
 #+begin_src lisp
   (defun divergence-iters (c)
@@ -260,7 +266,7 @@ Huh!! Why no change?? This is because with just ~30~ iteration for each pixel, t
  Total  :13.620 sec
 #+end_verse
  Still no benefit!! Lets try decoupling drawing and computing and see if drawing pixels is the bottleneck.
-** Decoupling Drawing and Computing
+* Decoupling Drawing and Computing
 #+begin_src lisp
   (deftype color ()
     '(unsigned-byte 8))
@@ -339,7 +345,7 @@ Computation  :3.480 sec
 
 From 13 seconds to around 3.3 seconds! Its good. Seems like drawing a pixel is a blocking activity or something like that (I din't dig into it further). So, performing all computation in different cores then drawing all at onces is better. 
 
-** Lets add translation and scaling! 
+* Lets add translation and scaling! 
 #+begin_src lisp
   (defparameter *scale* 3e-3)
   (defparameter *translation* (complex 0 0))
@@ -388,14 +394,13 @@ From 13 seconds to around 3.3 seconds! Its good. Seems like drawing a pixel is a
 	   (:sdl-key-k
 	    (setf *scale* (/ *scale* 1.2)))
 	   (:sdl-key-a
-	    (incf *translation* (* *scale* #C(20 0))))
+	    (incf *translation* (* *scale* #C(-20 0))))
 	   (:sdl-key-d
-	    (decf *translation* (* *scale* #C(20 0))))
+	    (incf *translation* (* *scale* #C(20 0))))
 	   (:sdl-key-w
-	    (incf *translation* (* *scale* #C(0 20))))
+	    (incf *translation* (* *scale* #C(0 -20))))
 	   (:sdl-key-s
-	    (decf *translation* (* *scale* #C(0 20))))))
-
+	    (incf *translation* (* *scale* #C(0 -20))))))
 	(:idle
 	 ()
 	 ;; Clear screen
@@ -428,7 +433,7 @@ Draw      : 0.370 sec
 This is all good! But I am still not happy with the 350ms it takes to draw each frame. 
 We will have to directly access the surface buffer to write pixel colors in bulk. But lispbuilder-sdl doesn't directly provide this feature (or at least I don't know that), rather lispbuilder-sdl requires us to use opengl. 
 
-** OpenGL
+* OpenGL
 #+begin_src lisp
   (defparameter *buffer-base* (make-array (* *height* *width* 3) :element-type 'color))
   (defparameter *buffer* (make-array (list *height* *width* 3)
@@ -445,7 +450,7 @@ We will have to directly access the surface buffer to write pixel colors in bulk
 #+RESULTS:
 : DRAW
 
-cl-opengl's ~draw-pixels~ takes five arguments width and height of the data, format of pixel data (we have rgb), and type of data (unsigned-bytes). Also note that it expects a simple-vector i.e. a one-dimensional array. But our ~*buffer*~ was a multidimensional array. Here the displaced-array feature of Common Lisp comes to resuce. We create a 1d array (~~*buffer-base*~) of size ~width * height * 3~ then define ~*buffer*~ as a 3d array displaced to that array. This way we won't have to change the code we wrote before. 
+cl-opengl's ~draw-pixels~ takes five arguments width and height of the data, format of pixel data (we have rgb), and type of data (unsigned-bytes). Also note that it expects a simple-vector i.e. a one-dimensional array. But our ~*buffer*~ was a multidimensional array. Here the displaced-array feature of Common Lisp comes to rescue. I created a 1d array (~*buffer-base*~) of size ~width * height * 3~ then defined ~*buffer*~ as a 3d array displaced to that array. This way we won't have to change the code we wrote before. 
 
 Finally, we change ~main~ and tell sdl to allow us to use opengl. 
 #+begin_src lisp
@@ -455,8 +460,8 @@ Finally, we change ~main~ and tell sdl to allow us to use opengl.
       ...))
 #+end_src
 
+* Finally Result
 
-** Finally
-See [[./mandelbrot.lisp]] file for the full code. 
-
-See [[https://drive.google.com/file/d/173C0ddf5ncPkkax3NaIgMwRCXZpQoxRj/view?usp=sharing][this screen recording]] for the result. (The code that appears in the video is not this final version, so it has slightly different function names somewhere, otherwise its all the same)
++ See [[./mandelbrot.lisp]] file for the full code. 
++ See [[./output/mandelbrot.pdf][mandelbrot.pdf]] file for pdf version of this org file. 
++ See [[https://drive.google.com/file/d/173C0ddf5ncPkkax3NaIgMwRCXZpQoxRj/view?usp=sharing][this screen recording]] for the result. (The code that appears in the video is not this final version, so it has slightly different function names somewhere, otherwise its all the same)
