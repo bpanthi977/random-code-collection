@@ -1,0 +1,92 @@
+From [[https://en.wikipedia.org/wiki/Mandelbrot_set][Wikipedia]]:
+
+The Mandelbrot set is the set of complex numbers $c$ for which the function $f_c(z)= z^2+c$ doesn't diverge when iterated from $z=0$. 
+
+i.e. to check if the number c = 3+2i belongs to the Mandelbrot set, we iterate as follows:
++ $f_c(0) = c$
++ $f_c(f_c(0)) = c^2+c$
++ $f_c(f_c(f_c(0))) = (c^2+c)^{2} + c$
++ ... 
+
+And if the final result is inifinty then $c$ doesn't blong to Mandelbrot set. 
+
+#+begin_src lisp
+  (defun iterate (c iterations limit)
+    (loop repeat iterations 
+	  for f = c then (+ (expt f 2) c)
+	  when (> (abs f) limit)
+	    return nil
+	  finally (return f)))
+#+end_src
+
+* Lets plot then
+
+#+begin_src lisp
+  (ql:quickload :lispbuilder-sdl)
+
+  (defparameter *scale* 100.0)
+  (defparameter *translation* (complex 0 0))
+  (defparameter *memory* (make-hash-table :test #'eql))
+
+  (defun iterate (c iterations limit)
+    (declare (optimize (speed 3) (safety 0) (debug 0)))
+    (declare ((complex single-float) c)
+	     (fixnum iterations limit))
+    (loop repeat iterations 
+	  for f complex = c then (+ (expt f 2) c)
+	  when (> (abs f) limit)
+	    return nil
+	  finally (return f)))
+
+  (defun belongs-to-mandelbrot (c)
+    (iterate c
+	     1000
+	     50))
+
+
+  (defun translate (x y)
+    (declare (optimize (speed 3) (safety 0) (debug 0)))
+    (declare (integer x y)
+	     ((complex integer) *translation*)
+	     (single-float *scale*))
+    (* *scale* (the (complex integer) (+ *translation* (complex x y)))))
+
+  (defun main ()
+    (sdl:with-init ()
+      (sdl:window 1200 700 :resizable t :title-caption "Mandelbrot Set")
+      (setf sdl:*default-color* sdl:*black*)
+      (sdl:initialise-default-font)
+      (sdl:with-events ()
+	(:quit-event () t)
+	(:key-down-event
+	   (:key key)
+	   (case key
+	     (:sdl-key-q (sdl:push-quit-event))
+	     (:sdl-key-l
+	      (setf *scale* (* *scale* 1.2)))
+	     (:sdl-key-k
+	      (setf *scale* (/ *scale* 1.2)))
+	     (:sdl-key-a
+	      (incf *translation* #C(20 0)))
+	     (:sdl-key-d
+	      (decf *translation* #C(20 0)))
+	     (:sdl-key-w
+	      (incf *translation* #C(0 20)))
+	     (:sdl-key-s
+	      (decf *translation* #C(0 20)))))
+
+	(:idle
+	 ()
+	 ;; Clear screen
+	 (sdl:clear-display sdl:*white*)
+	 ;; drawing
+	 (loop for x from 0 to 1200 do
+	       (loop for y from 0 to 700
+		     for value =  (belongs-to-mandelbrot (translate x y)) do
+		       (when value 
+			 (sdl:draw-pixel-* x y :color
+					   (sdl:color :g 0 :b 0 :r (max 0 (min 255 (* 200 (abs value)))))))))
+
+	 (sdl:update-display)
+	 ))))
+#+end_src
