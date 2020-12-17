@@ -121,5 +121,4 @@
        ;; drawing
        (format t "~&Calculate : ~,3f sec" (timing #'calculate))
        (format t "~&Draw      : ~,3f sec" (timing #'draw))
-       (sdl:update-display)
-       ))))
+       (sdl:update-display)))))

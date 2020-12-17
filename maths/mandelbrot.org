@@ -408,8 +408,7 @@ From 13 seconds to around 3.3 seconds! Its good. Seems like drawing a pixel is a
 	 ;; drawing
 	 (format t "~&Calculate : ~,3f sec" (timing #'compute))
 	 (format t "~&Draw      : ~,3f sec" (timing #'draw))
-	 (sdl:update-display)
-	 ))))
+	 (sdl:update-display)))))
 #+end_src
 
 #+RESULTS:
