@@ -457,3 +457,6 @@ Finally, we change ~main~ and tell sdl to allow us to use opengl.
 
 
 ** Finally
+See [[./mandelbrot.lisp]] file for the full code. 
+
+See [[https://drive.google.com/file/d/173C0ddf5ncPkkax3NaIgMwRCXZpQoxRj/view?usp=sharing][this screen recording]] for the result. (The code that appears in the video is not this final version, so it has slightly different function names somewhere, otherwise its all the same)
