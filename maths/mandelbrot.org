@@ -82,7 +82,7 @@ So, 0+0i lies in mandelbrot set, while 1+1i takes 2 iterations of the value to e
 Here i subtracted 800 + 350i from position x+yi to center the plot and scaled it with 2e-3 so that we would be looking at something interesting rather than all black or red portion of the plot. 
 
 #+CAPTION: first-mandelbrot
-[[attachment:20201217222331-first_mandelbrot.png]]
+[[./.data/20201217222331-first_mandelbrot.png]]
 
 See!! we did it! This was so easy.
 Lets look at how fast our code runs.
