@@ -5,7 +5,7 @@
 (defparameter *width* 1200)
 (defparameter *height* 700)
 (defparameter *scale* 3e-3)
-(defparameter *translation* (complex 0 0))
+(defparameter *translation* (complex -1.4011314 5.8106216e-6))
 
 ;; initialize 8 lparallel kernels 
 (defparameter lparallel:*kernel* (lparallel:make-kernel 8))
@@ -28,41 +28,50 @@
 				   :displaced-to *buffer-base*))
 
 ;;; Mandelbrot Set Computations 
+(declaim (inline square-modulus))
+(defun square-modulus (c)
+  (declare (optimize (speed 3) (safety 0) (debug 0))
+	   ((complex single-float) c))
+  (+ (expt (realpart c) 2)
+     (expt (imagpart c) 2)))
 
-(defun iterate (c iterations limit)
+(declaim (inline iterate))
+(defun iterate (c iterations)
   (declare (optimize (speed 3) (safety 0) (debug 0)))
   (declare ((complex single-float) c)
 	   (fixnum iterations))
   (let ((f c))
-    (declare ((complex single-float) f)
-	     (single-float limit))
+    (declare ((complex single-float) f))	     
     (dotimes (iters iterations f)
       (setf f (+ (expt f 2) c))
-      (when (> (abs f) limit)
+      (when (> (square-modulus f) 4.0)
 	(return-from iterate iters)))
     nil))
 
-(defun divergence-iters (c)
-  "Number of iterations it took for `c' to diverge. NIL for `c' that belongs to madelbrot set"
-  (iterate c
-	   30
-	   50.0))
-
+(declaim (inline transform))
 (defun transform (x y)
   (declare (optimize (speed 3) (safety 0) (debug 0)))
   (declare (fixnum x y)
-	   ((complex fixnum) *translation*)
+	   ((complex single-float) *translation*)
 	   (single-float *scale*))
-  (+ *translation* (complex (* *scale* (the fixnum (- x 800)))
-			    (* *scale* (the fixnum (- y 350))))))
+  (complex (+ (realpart *translation*) (* *scale* (the fixnum (- x 800))))
+	   (+ (imagpart *translation*) (* *scale* (the fixnum (- y 350))))))
+
+(defun divergence-iters (x y)
+  "Number of iterations it took for `(x, y)' to diverge. NIL for `c' that belongs to madelbrot set"
+  (iterate (transform x y) 500))
+
 
 (defun compute% (x0 x1 y0 y1) 
+  (declare (optimize (speed 3) (safety 0) (debug 0))
+	   (fixnum x0 x1 y0 y1)
+	   ((array color) *buffer*))
   (loop for x from x0 below x1 do
     (loop for y from y0 below y1 
-	  for value =  (divergence-iters (transform x y)) do
+	  for value of-type (or null fixnum) = (divergence-iters x y) do
 	    (if value 
 		;; when not in set, color the pixel
-		(setf (aref *buffer* y x 0) (max 0 (min 255 (* 20 (abs value))))
+		(setf (aref *buffer* y x 0) (max 0 (min 255 (* 20 value)))
 		      (aref *buffer* y x 1) 0
 		      (aref *buffer* y x 2) 0)
 		;; when in set, just set to white color
