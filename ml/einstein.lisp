@@ -1,3 +1,8 @@
+(defpackage :einsum
+  (:use :cl))
+
+(in-package :einsum)
+
 (defparameter *indices* nil)
 (defparameter *indices-vars* nil)
 (defparameter *indices-max* nil)
