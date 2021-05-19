@@ -79,19 +79,32 @@
 		       (truncate (* *scale* radius))
 		       :color color)))
 
+(declaim (inline lighter-color))
+(defun lighter-color (color alpha)
+  "Interpolates with white to get a lighter color; alpha 0 = white, alpha 1 = color"
+  (declare (type color color)
+	   (type (float 0 1) alpha))
+  (let ((whitish (* 255 (- 1 alpha))))
+    (sdl:color :r (floor (+ whitish (* (sdl:r color) alpha)))
+	       :g (floor (+ whitish (* (sdl:g color) alpha)))
+	       :b (floor (+ whitish (* (sdl:b color) alpha))))))
+
 (defun draw-trail (start ring-buffer color)
   (declare (type coord start)
 	   (type ring-buffer ring-buffer)
 	   (type color color))
-  (let ((start (coord->sdl-point (transform start))))
+  (let ((start (coord->sdl-point (transform start)))
+	(del-alpha (float (/ (ring-buffer-count ring-buffer))))
+	(alpha 1.0f0))
     (map-ring-buffer (lambda (end)
 		       (setf end (coord->sdl-point (transform end)))
-		       (sdl:draw-line start end :color color)
+		       (sdl:draw-line start end :color (lighter-color color alpha))
+		       (decf alpha del-alpha)
 		       (setf start end))
 		     ring-buffer)))
 
 (defun draw (system)
-  "Draws everything i.e. some circles"
+  "Draws everything i.e. some circles with trails"
   (declare (type system system))
   (loop for ball of-type coord  across (system-balls system)
 	for trail of-type ring-buffer across (system-trails system)
@@ -119,6 +132,7 @@
 (defun update-state (dt position velocity radius sphere-radius)
   "Physics update for a single ball"
   (declare (type coord position velocity)
+	   (optimize (debug 3))
 	   (type single-float radius sphere-radius))
   (let ((|p| (abs position)))
     (cond ((< (+ |p| radius) sphere-radius)
@@ -134,9 +148,12 @@
 	     (flet ((correction (velocity* del-pe)
 		      ;; correction for energy change due to shift in position
 		      ;; within gravitational field
-		      ;; 1/2 v1^2 + gh1 = 1/2 v2^2 + gh2 
-		      (* velocity* (sqrt (- 1 (/ (* 2 del-pe)
-						 (expt (abs velocity*) 2)))))))
+		      ;; 1/2 v1^2 + gh1 = 1/2 v2^2 + gh2
+		      (let ((|v*| (abs velocity*)))
+			(if (= |v*| 0)
+			    velocity*
+			    (* velocity* (sqrt (- 1 (/ (* 2 del-pe)
+						       (expt |v*| 2)))))))))
 	       (values shifted-position
 		       (correction (+ (- normal) parallel)
 				   (dot *gravity* (- (- shifted-position position)))))))))))
@@ -160,8 +177,6 @@
 ;;;
 ;;; Initialization/Main
 ;;; 
-
-
 (defun coords (&rest complex-coordinates)
   "Returns a vector of coordinates"
   (assert (every (lambda (c) (typep c 'coord)) complex-coordinates))
@@ -170,10 +185,10 @@
 	      :initial-contents complex-coordinates))
 
 (defun initialize-system ()
-  (make-system :balls (coords #C(0.0000001 0.0) #C(0.0 0.0) #C(0.00000001 0.0))
+  (make-system :balls (coords #C(0.0000001 0.0) #C(0.95 0.0) #C(0.00000001 0.0))
 	       :colors (vector sdl:*red* sdl:*blue* sdl:*green*)
 	       :velocities (coords #C(0.0 0.0) #C(0.0 0.0) #C(0.0 0.0))
-	       :trails (make-array 3 :initial-contents (loop repeat 3 collect (initialize-ring-buffer 100)))
+	       :trails (make-array 3 :initial-contents (loop repeat 3 collect (initialize-ring-buffer 300)))
 	       :sphere-radius 1.0f0
 	       :balls-radius 0.05f0))
 
@@ -199,7 +214,8 @@
                (sdl:clear-display sdl:*white*)
                ;; Update physics
 	       (let* ((t2 (get-internal-real-time))
-		      (dt (float (speedup (/ (- t2 t1) internal-time-units-per-second)))))
+		      (dt (float (speedup (/ (- t2 t1) internal-time-units-per-second))
+				 0.0)))
 		 (loop repeat 10
 		       do (update (/ dt 10) system))
 		 (setf t1 t2))
