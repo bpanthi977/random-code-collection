@@ -3,6 +3,8 @@
 (setf *read-default-float-format* 'double-float)
 (deftype coord ()
   `(complex double-float))
+(deftype color ()
+  `sdl:color)
 
 (defun dot (a b)
   "Dot product of coordinates a and b"
@@ -12,18 +14,20 @@
 
 (defstruct system
   (balls nil :type (vector coord))
+  (colors nil :type (vector color))
   (velocities nil :type (vector coord))
   (sphere-radius nil :type single-float)
   (balls-radius nil :type single-float))
 
 (defparameter *system* nil)
-(defparameter *gravity* #C(0.0 9.81))
+(defparameter *gravity* #c(0.0 9.81))
 
 (defun draw-circle (coord radius &optional (color sdl:*black*))
   (declare (type coord coord)
-	   (type single-float radius))
+	   (type single-float radius)
+	   (type color color))
   (let* ((scale 200)
-	 (shift #C(400 250))
+	 (shift #c(400 250))
 	 (coord (+ (* scale coord) shift)))
     (sdl:draw-circle-* (truncate (realpart coord))
 		       (truncate (imagpart coord))
@@ -32,9 +36,10 @@
 (defun draw (system)
   (declare (type system system))
   (loop for ball of-type coord  across (system-balls system)
+	for color of-type color across (system-colors system)
 	with radius = (system-balls-radius system) do
-	  (draw-circle ball radius))
-  (draw-circle #C(0.0 0.0) (system-sphere-radius system))
+	  (draw-circle ball radius color))
+  (draw-circle #c(0.0 0.0) (system-sphere-radius system))
   (values))
 
 (defun draw-energy (system)
@@ -43,7 +48,7 @@
 	summing (+ (* 1/2 (expt (abs velocity) 2))
 		   (- (dot *gravity* ball)))
 	  into energy
-	finally (sdl:draw-string-solid-* (format nil "Energy: ~0,3f" energy)
+	finally (sdl:draw-string-solid-* (format nil "energy: ~0,3f" energy)
 					 8 16)))
 	  
 
@@ -62,15 +67,14 @@
 		  (parallel (- velocity normal))
 		  (shifted-position (* position (- sphere-radius radius) (/ |p|))))
 	     (flet ((correction (velocity* del-pe)
-		      ;; Correction for energy change due to shift in position
+		      ;; correction for energy change due to shift in position
 		      ;; within gravitational field
 		      ;; 1/2 v1^2 + gh1 = 1/2 v2^2 + gh2 
-		      (* velocity* (print (sqrt (1- (/ (* 2 del-pe)
-						       (expt (abs velocity*) 2))))))))
-	       (format t "~& PE = ~a" (dot *gravity* (- shifted-position position)))
+		      (* velocity* (sqrt (- 1 (/ (* 2 del-pe)
+						 (expt (abs velocity*) 2)))))))
 	       (values shifted-position
 		       (correction (+ (- normal) parallel)
-				   (dot *gravity* (- shifted-position position))))))))))
+				   (dot *gravity* (- (- shifted-position position)))))))))))
 
 (defun update (dt system)
   (declare (type float dt)
@@ -93,17 +97,15 @@
 
 (defun initialize-system (&optional (type :single))
   (ecase type 
-    (:single (make-system :balls (coords #C(0.001 0.0))
-			  :velocities (coords #C(0.0 0.0))
+    (:single (make-system :balls (coords #c(0.0000001 0.0) #C(0.0 0.0) #C(0.00000001 0.0))
+			  :colors (vector sdl:*red* sdl:*blue* sdl:*green*)
+			  :velocities (coords #C(0.0 0.0) #C(0.0 0.0) #C(0.0 0.0))
 			  :sphere-radius 1.0f0
 			  :balls-radius 0.05f0))
-    (:rest (make-system :balls (coords #C(0 9.95))
-			:velocities (coords #C(0.0 0.0))
-			:sphere-radius 1.0f0
-			:balls-radius 0.05f0))))
+    ))
 
 (defun speedup (dt)
-  (float dt))
+  (* 1 (float dt)))
 
 (defun main ()
   (sdl:with-init ()
