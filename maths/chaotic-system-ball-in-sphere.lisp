@@ -1,16 +1,12 @@
 (ql:quickload :lispbuilder-sdl)
 
 (setf *read-default-float-format* 'double-float)
+
 (deftype coord ()
   `(complex double-float))
+
 (deftype color ()
   `sdl:color)
-
-(defun dot (a b)
-  "Dot product of coordinates a and b"
-  (declare (type coord a b))
-  (+ (* (realpart a) (realpart b))
-     (* (imagpart a) (imagpart b))))
 
 (defstruct system
   (balls nil :type (vector coord))
@@ -19,8 +15,17 @@
   (sphere-radius nil :type single-float)
   (balls-radius nil :type single-float))
 
-(defparameter *system* nil)
 (defparameter *gravity* #c(0.0 9.81))
+
+(defun dot (a b)
+  "Dot product of coordinates a and b"
+  (declare (type coord a b))
+  (+ (* (realpart a) (realpart b))
+     (* (imagpart a) (imagpart b))))
+
+;;;
+;;; Drawing
+;;;
 
 (defun draw-circle (coord radius &optional (color sdl:*black*))
   (declare (type coord coord)
@@ -33,7 +38,9 @@
 		       (truncate (imagpart coord))
 		       (truncate (* scale radius))
 		       :color color)))
+
 (defun draw (system)
+  "Draws everything i.e. some circles"
   (declare (type system system))
   (loop for ball of-type coord  across (system-balls system)
 	for color of-type color across (system-colors system)
@@ -43,6 +50,8 @@
   (values))
 
 (defun draw-energy (system)
+  "Total energy of system (For debug purpose) should stay constant for good physics integrator"
+  (declare (type system system))
   (loop for ball of-type coord across (system-balls system)
 	for velocity of-type coord across (system-velocities system)
 	summing (+ (* 1/2 (expt (abs velocity) 2))
@@ -50,9 +59,12 @@
 	  into energy
 	finally (sdl:draw-string-solid-* (format nil "energy: ~0,3f" energy)
 					 8 16)))
-	  
+;;;
+;;; Physics
+;;;
 
 (defun update-state (dt position velocity radius sphere-radius)
+  "Physics update for a single ball"
   (declare (type coord position velocity)
 	   (type single-float radius sphere-radius))
   (let ((|p| (abs position)))
@@ -77,6 +89,7 @@
 				   (dot *gravity* (- (- shifted-position position)))))))))))
 
 (defun update (dt system)
+  "Physics update for whole system"
   (declare (type float dt)
 	   (type system system))
   (loop for position of-type coord across (system-balls system)
@@ -87,25 +100,30 @@
 	      (update-state dt position velocity radius (system-sphere-radius system))
 	    (setf (aref (system-balls system) i) position
 		  (aref (system-velocities system) i) velocity)))
-  system)
+  (values))
+
+;;;
+;;; Initialization/Main
+;;; 
+
 
 (defun coords (&rest complex-coordinates)
+  "Returns a vector of coordinates"
   (assert (every (lambda (c) (typep c 'coord)) complex-coordinates))
   (make-array (length complex-coordinates)
 	      :element-type 'coord
 	      :initial-contents complex-coordinates))
 
-(defun initialize-system (&optional (type :single))
-  (ecase type 
-    (:single (make-system :balls (coords #c(0.0000001 0.0) #C(0.0 0.0) #C(0.00000001 0.0))
-			  :colors (vector sdl:*red* sdl:*blue* sdl:*green*)
-			  :velocities (coords #C(0.0 0.0) #C(0.0 0.0) #C(0.0 0.0))
-			  :sphere-radius 1.0f0
-			  :balls-radius 0.05f0))
-    ))
+(defun initialize-system ()
+  (make-system :balls (coords #C(0.0000001 0.0) #C(0.0 0.0) #C(0.00000001 0.0))
+	       :colors (vector sdl:*red* sdl:*blue* sdl:*green*)
+	       :velocities (coords #C(0.0 0.0) #C(0.0 0.0) #C(0.0 0.0))
+	       :sphere-radius 1.0f0
+	       :balls-radius 0.05f0))
 
 (defun speedup (dt)
-  (* 1 (float dt)))
+  "Change speed of simulation. (For debug purpose)"
+  dt)
 
 (defun main ()
   (sdl:with-init ()
@@ -123,15 +141,14 @@
 	(:idle ()
                ;; Clear screen
                (sdl:clear-display sdl:*white*)
-	       (draw-energy system)
                ;; Update physics
 	       (let* ((t2 (get-internal-real-time))
-		     (dt (speedup (/ (- t2 t1) internal-time-units-per-second))))
-		 (loop repeat 10
-		       do (update (/ dt 10) system))
+		      (dt (float (speedup (/ (- t2 t1) internal-time-units-per-second)))))
+		 (loop repeat 1
+		       do (update (/ dt 1) system))
 		 (setf t1 t2))
                ;; Draw objects
                (draw system)
-
+	       (draw-energy system)
                ;; Update screnn
                (sdl:update-display))))))
