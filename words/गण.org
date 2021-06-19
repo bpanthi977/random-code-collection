@@ -1,41 +1,33 @@
+#+PROPERTY: header-args :tangle yes
 * गण
   Our objective is to find words that belong to certain गण for छन्द writing. 
 
 * Code
 ** Utilities
-     Lets load some utility libraries and create a working package. I define ~replace-once~ and ~replace-all~ here, which will be used later. 
+   Lets load some utility libraries and create a working package. I define ~replace-once~ and ~replace-all~ here, which will be used later. 
 
-#+begin_src lisp
-  (ql:quickload '(:serapeum :alexandria))
+   #+begin_src lisp
+     (ql:quickload '(:serapeum :alexandria))
 
-  (uiop:define-package #:chhanda/utils
-    (:use :cl :serapeum :alexandria)
-    (:reexport :serapeum :alexandria))
+     (uiop:define-package #:chhanda/utils
+	 (:use :cl :serapeum :alexandria)
+       (:reexport :serapeum :alexandria))
 
-  (defpackage #:chhanda
-    (:use :cl)
-    (:local-nicknames (#:u #:chhanda/utils)))
+     (defpackage #:chhanda
+       (:use :cl)
+       (:local-nicknames (#:u #:chhanda/utils)))
 
-  (in-package #:chhanda)
+     (in-package #:chhanda)
 
-  (defun replace-once (pattern result seq)
-    "Replace one occurance of `pattern' with `result' in sequence `seq'"
-    (let ((pos (search pattern seq)))
-      (when pos
-	(nconc (u:firstn pos seq)
-	       (list result)
-	       (nthcdr (+ pos (length pattern)) seq)))))
-
-  (defun replace-all (pattern result seq)
-    (loop with sequence = seq
-	  with c = 0 
-	  for new = (replace-once pattern result sequence) 
-	  unless new
-	    return (values sequence c)
-	  when new do 
-	    (incf c)
-	    (setf sequence new)))
-#+end_src
+     (defun replace-all (pattern result seq)
+       "Replace all occurance of `pattern' with `result' in sequence `seq'"
+       (u:if-let (pos (search pattern seq))
+	 (values (nconc (u:firstn pos seq)
+			(list result)
+			(replace-all pattern result (nthcdr (+ pos (length pattern)) seq)))
+		 t)
+	 (values seq nil)))
+   #+end_src
 
 ** Word List
    Luckly I had a wordlist (actually dictionary entries from a Nepali Dictionary) lying around. So, I'll use that.
@@ -46,166 +38,420 @@
    
 ** अक्षर types
    For the purpose of छन्द writing there are only two types of letters: लघु and दीर्घ. So for parsing of words typed in unicode, I need to categorize as follows:
-#+begin_src lisp
-  (defparameter *laghu* (list #\ि #\ु #\ँ #\ृ))
-  (defparameter *laghu-letter* (list #\अ #\इ #\उ #\ऋ))
-  (defparameter *guru* (list #\ा #\ी #\ू #\े #\ै #\ो #\ौ #\ं #\: #\DEVANAGARI_SIGN_VISARGA))
-  (defparameter *guru-letter* (list #\आ #\ई #\ऊ #\ए #\ऐ #\ओ #\औ))
-  (defparameter *viram* #\DEVANAGARI_SIGN_VIRAMA)
-#+end_src
+   #+begin_src lisp
+     (defparameter *laghu* (list #\ि #\ु #\ँ #\ृ))
+     (defparameter *laghu-letter* (list #\अ #\इ #\उ #\ऋ))
+     (defparameter *guru* (list #\ा #\ी #\ू #\े #\ै #\ो #\ौ #\ं #\: #\DEVANAGARI_SIGN_VISARGA))
+     (defparameter *guru-letter* (list #\आ #\ई #\ऊ #\ए #\ऐ #\ओ #\औ))
+     (defparameter *viram* #\DEVANAGARI_SIGN_VIRAMA)
+   #+end_src
 
 ** Transformations
 
    ~canonicalize~ converts all the char into one of the these: ् ी ई ि क 
-+ :क represents लघु letters
-+ :ि represents ikar, which when combined with a full letter or half letter turns to लघु letter
-+ :ी represents dirgha ikar, which as above turns to दीर्घ letter
-+ :ई represents दीर्घ letters
-+ :् represents biram, which makes the preceding full letter to half letter
+   + :क represents लघु letters
+   + :ि represents ikar, which when combined with a full letter or half letter turns to लघु letter
+   + :ी represents dirgha ikar, which as above turns to दीर्घ letter
+   + :ई represents दीर्घ letters
+   + :् represents biram, which makes the preceding full letter to half letter
 
-  Then we define ~rules~ for transformation of combinations/tranformation of canonicalized representation. For examples the third rule ~(:ई :क :क्)~ says ~:क~ and ~:क्~ combine to form ~:ई~ i.e. a full letter followed by a half letter is दिर्घ .
+     Then we define ~rules~ for transformation of combinations/tranformation of canonicalized representation. For examples the third rule ~(:ई :क :क्)~ says ~:क~ and ~:क्~ combine to form ~:ई~ i.e. a full letter followed by a half letter is दिर्घ .
 
-  ~transform~ function simply uses the ~rules~ and the pattern replacing function we defined in Utilities section to perform the transformation. 
- #+begin_src lisp
-   (defun canonicalize (char)
-     (cond ((eql char *viram*) :्)
-	   ((find char *guru*) :ी)
-	   ((find char *guru-letter*) :ई)
-	   ((find char *laghu*) :ि)
-	   (t :क)))
+     ~transform~ function simply uses the ~rules~ and the pattern replacing function we defined in Utilities section to perform the transformation. 
+     #+begin_src lisp
+       (defun canonicalize (char)
+	 (cond ((eql char *viram*) :्)
+	       ((find char *guru*) :ी)
+	       ((find char *guru-letter*) :ई)
+	       ((find char *laghu*) :ि)
+	       (t :क)))
 
-   (defparameter *rules* '((:क् :क :्)
-			   (:क् :क् :क्)
-			   (:ई :क :क्)
-			   (:ई :ई :क्)
-			   (:क :क :ि)
-			   (:ई :क :ी)))
+       (defparameter *rules* '((:क् :क :्)
+			       (:क् :क् :क्)
+			       (:ई :क :क्)
+			       (:ई :ई :क्)
+			       (:क :क :ि)
+			       (:ई :क :ी)))
 
-   (defun transform (seq)
-     (loop for (result . pattern) in *rules*
-	   with c = 0 do
-	     (multiple-value-bind (new count) (replace-all pattern result seq)
-	       (incf c count)
-	       (setf seq new))
-	   finally (return (if (= c 0)
-			       seq
-			       (transform seq)))))
+       (defun transform (seq)
+	 (loop for (result . pattern) in *rules*
+	       with changed = nil do  
+		 (multiple-value-bind (new replaced?) (replace-all pattern result seq)
+		   (when replaced? (setf changed t))
+		   (setf seq new))
+	       finally (return (if changed
+				   (transform seq)
+				   seq))))
 
-   (defun maatra (word)
-     (transform (map 'list #'canonicalize word)))
-#+end_src
+       (defun maatra (word)
+	 (transform (map 'list #'canonicalize word)))
+     #+end_src
 
-Let's check:
-#+begin_src lisp :exports both
-  (maatra "अच्युतम्")
-#+end_src
+   Let's check:
+   #+begin_src lisp :exports both :tangle nil
+     (maatra "अच्युतम्")
+   #+end_src
 
-#+RESULTS:
-| :ई | :क | :ई |
+   #+RESULTS:
+   | :ई | :क | :ई |
 
-~अच्युतम्~ is ई क ई i.e. दीर्घ लघु दीर्घ 
+   ~अच्युतम्~ is ई क ई i.e. दीर्घ लघु दीर्घ 
 ** Finally
 
    The word list has numerals appends to the words so, we need a little cleanup. Then ~find-गण~ can find all words that match given गण.
+   #+begin_src lisp
+     (defun cleanup (word)
+       (let ((dirty #.(concatenate 'string "१२३४५६७८९०;-।.~[]()=?,/"
+				   (list #\Tab #\Newline #\Return)
+				   "abcdefghijklmnopqrstuvwxyz"
+				   "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+				   "±√!@#$%^&_=¬²'´［］½×Å˜×Þ")))
+	 (remove-if (lambda (c)
+		      (find c dirty :test #'char=))
+		    word)))
+
+     (defun find-गण (गण)
+       (loop for (word . meaning) in *dict*
+	     when (equal (maatra (cleanup word)) गण)
+	       collect word))
+   #+end_src
+
+   Example: (for र-गण)
+   #+begin_src lisp :exports both :tangle nil
+     (u:batches (find-गण '(:ई :क :ई)) 12)
+   #+end_src
+
+   #+RESULTS:
+   | अक्षता   | अक्षमा   | अङ्कुसे    | अङ्गना   | अङ्गिका   | अङ्गुठो   | अन्ततः   | अन्तरा   | अन्तरी   | अन्तरे   | अप्सरा   | अफि्रका   |
+   | अम्बिका  | अमि्रसो  | अम्लिसो  | अर्कना   | अर्गला    | अर्थुबो   | अर्दली   | अर्निको  | अर्मले    | अल्पता  | अश्विनी  | अष्टमी    |
+   | अस्तुरा   | अस्मिता  | आउँदो    | आउती    | आउनी     | आउरे     | आगरी    | आग्रही   | आडिलो   | आत्तुरी  | आदमी    | आरती१    |
+   | आरती२   | आरसी    | आलुचा    | आसरा    | आसुरी     | इङ्गला   | इत्तरो   | इन्दिरा  | इष्टका   | इस्तिफा | इस्तिरी  | उघ्रँदो    |
+   | उच्चता   | उत्तमा   | उत्तरा   | उन्मनी   | उब्जनी    | उर्वरा   | उर्वशी   | एउटा    | एकता    | एकले    | एकलै     | एकलो     |
+   | एकुवा    | एकुवा    | एक्सरे    | एत्रुको   | एषणा     | एसिया   | कङ्कला   | कङ्गना   | कच्चिडो  | कट्कुरो  | कड्कँुलो   | कण्डिका   |
+   | कन्जरो   | कन्दनी   | कन्दरा   | कन्धनी   | कन्सिरी   | कम्तिया  | कम्पनी   | कर्कली   | कर्कलो   | कर्चुलो  | कर्छुली   | कर्णिका   |
+   | कर्तरी   | कर्मणा   | कल्पना   | कल्लिया  | कस्तरी    | कस्मिरी  | काइँयो   | काइँली   | काइँलो   | काइते   | काइदा   | काइना    |
+   | काउछे    | काउछो   | काउडो   | काउली१  | काउली२   | काउलो   | काउसे    | काउसो   | काकली   | कागजी  | कागती   | कागते     |
+   | काङ्गियो | काठिया  | कात्तिके  | कानुनी   | कान्तिमान् | काबुली   | कामदी   | कामना   | कामला   | कामिता | कामिनी  | कायदा    |
+   | कारणी   | कारिका  | कारिणी  | कारिता  | कालिका   | कालिमा  | काल्टिकी | काशिका  | कास्मिरी | काहिँली | काहिँलो  | किङ्किणी  |
+   | किङ्गरी  | किर्किटी | कुञ्चिका  | कुप्रथा   | कुम्भिका   | कुर्कुरे    | कुर्सिँलो  | कुर्सियो  | कुल्कुली   | कृत्तिका | केतुवा    | केत्तुके     |
+   | केवँरा    | केशरी    | केसरी    | कैपुँचा    | कैरुवा     | कोइरी   | कोइला   | कोइली   | कोइलो   | कोकरी  | कोकले    | कोकिला   |
+   | कोगिटा  | कोटिला  | कोटिशः  | कोठरी   | कोपरा    | कोरली   | कोरलो   | कौतुकी   | कौमुदी   | कौशिकी | खड्कुँली   | खड्कुँलो    |
+   | खण्डिता  | खन्चुरो   | खन्चुवा   | खन्तरे    | खप्टुवा    | खर्चरी   | खर्चिलो  | खल्लने    | खस्मिनी  | खाइबा  | खानगी   | खानसा    |
+   | खाप्सियो | खारिलो  | खालिसा  | खिङ्गुली  | खुट्किलो   | खुड्किलो  | खुत्रुके    | खेचरी    | खेदुवा    | खेपुवा   | खेलुवा    | खेवरा     |
+   | खोइरे    | खोइरो१  | खोइरो२  | खोइलो   | खोकिलो   | खोपडी   | खोरिया  | खोसुवा   | खौकिया  | गण्डकी  | गन्जिफा  | गन्दगी    |
+   | गन्धिलो  | गब्रुवा   | गर्जने    | गर्भिणी  | गहु्रँगो    | गहु्रको   | गाइने    | गाउजो   | गायिका  | गायिनी | गुम्सँदो   | गेमरा     |
+   | गेवँरा    | गोकुले    | गोतिया  | गोपिका  | गोपिनी   | गोरखा   | गोलिँदो  | गोलिया  | गोलुवा   | गौ”डा  | गौ”डे    | गौ”डो    |
+   | गौमुखी   | गौमुखे    | गौरिया  | घण्टिका  | घाइते     | घुँग्रुके    | घुड्रुके    | घुर्घुरे    | घुर्बिसो  | घुर्मिलो | घोगचा   | घोटुवा    |
+   | घोलुवा   | घोषणा   | चञ्चला   | चञ्चले    | चण्डिका   | चन्चले    | चन्द्रमा  | चन्दि्रका | चम्किलो  | चर्चरी  | चर्चरे    | चर्चरो    |
+   | चर्पटी   | चर्पटे    | चाउथो   | चाउरी   | चाउरे     | चाउलो   | चाकडी   | चाकरी   | चाखुरो   | चातुरी  | चाम्मुठी  | चालिसे    |
+   | चासनी१  | चासनी२  | चाहिँदो  | चित्रिणी | चिर्कटो१  | चिर्कटो२ | चिर्भटी  | चूलिका   | चेतना    | चेपिलो  | चेपुवा    | चेहरा     |
+   | चोइटा   | चोइटो   | चोइली   | चोइलो   | चौकडा    | चौकुना   | चौखुँडा   | चौगडा   | चौगरो   | चौगुना  | चौघडा   | चौघडी    |
+   | चौघडी   | चौघरा   | चौधरी   | छाउनी   | छाउरा    | छाउरो   | छाकलो   | छाहरी   | छेउला    | छेउलो   | छेकुवा    | छेस्करा    |
+   | छेस्किनी  | छैमलो    | छोकडा१  | छोकडा२  | छोयला    | छौ”डा   | छौ”डी   | छौ”डो   | जङ्गली   | जन्तरे   | जर्खरो   | जर्बुटो    |
+   | जर्मनी   | जाउली   | जाउले    | जाउलो   | जानकी    | जाम्बवान् | जायजा   | जारिणी  | जालिका  | जालिनी | जाह्नवी  | जिन्दगी   |
+   | जीवनी   | जीविका  | जुन्किरी  | जेउडो    | जेसुकै      | जैसिनी   | जोइसी   | जोखना   | जोगिनी  | जोरही  | जोलिया  | जोसुकै     |
+   | जौहरी   | झक्कले    | झक्कलो   | झल्लरी   | झल्लिका   | झिल्लिका | झिल्सिँदो | झेउवा    | झोपडी   | झोलिनी | झोलिलो  | टङ्किका   |
+   | टट्टरी   | टर्कटी   | टाउके    | टाउको   | टाकुरी    | टाकुरो   | टाटरी   | टाडरी   | टापुरो   | टिप्पणी | टिर्टिरे  | टी० बी०  |
+   | टेकुवा    | टोकरी   | टोकसो   | ठाइँली   | ठाइँलो    | ठाहिँली  | ठाहिँलो  | ठेउको    | ठेउला    | ठेउवा   | ठेकुवा१   | ठेकुवा२    |
+   | ठेटुवा    | ठेलुवा    | ठोकने    | ठोकुवा   | ठोटरी    | डङ्किनी  | डाइनी   | डाकिनी  | डाडनी   | डायरी  | डिम्बिका | डे”ढी     |
+   | डेउढा    | डेउढी    | डेउढो    | डेपुटी    | डोबटी    | डोब्किलो | डोरिया  | डौ”ठे    | ढामरा   | ढिस्कुरो | ढुङ्गिलो  | ढेउसी     |
+   | ढेसरो    | तर्कना   | तर्जुमा   | ताउली   | ताउलो    | ताकिता  | ताडका   | ताडनी   | तारिका  | तालिका | तिब्बती  | तिर्सना   |
+   | तीजरो   | तेजिलो१  | तेजिलो२  | तेलिया   | तेहरो     | तौलिया  | थाउलो   | थापना   | थालनी   | थुम्किलो | थेगि्रनी  | थेचरो     |
+   | थेत्तरो   | दक्षिणा  | दक्षिणी  | दन्कुटी   | दम्किलो   | दम्पती   | दर्बिलो  | दर्सनी   | दहि्रलो  | दाइजो  | दाउनी   | दाउरा    |
+   | दाउरो   | दाखिला  | दादनी   | दादरा   | दादुरा    | दाबिले   | दाबिलो  | दामली   | दामिनी  | दायरा  | दायरी   | दारिका   |
+   | दार्चुला  | दाहिने   | दाहिनो  | दिल्लगी  | दीपिका   | दुर्दशा   | दुर्मना   | दूषिका   | देउकी    | देउडा   | देउता    | देउती     |
+   | देउते     | देउमा    | देउला१   | देउला२   | देउले      | देउसी    | देवता    | देशना    | देहली    | दोकडा  | दोकला   | दोगला    |
+   | दोजिया  | दोतला   | दोदरा   | दोभरा   | दोलखा    | दोलिका  | दोहरे    | दोहरो   | दोहलो   | धर्मिणी | धाउनी   | धामिनी   |
+   | धारणा   | धारिणी  | धारिलो  | धुत्तुरी   | धुमि्रँदो   | धोकुवा   | धोबिनी  | नक्कली   | नक्कले    | नन्दिनी | नम्बरी   | नर्मदा    |
+   | नर्सरी   | नाइके    | नाइटे    | नाइटो   | नाकिमा   | नाकुली   | नागरी   | नागिनी  | नाटिका  | नातिने  | नायिका  | नारकी    |
+   | नालिका  | नासिका  | नासिकी  | निम्छरो  | निम्सरो   | निर्घिनी | निर्छली  | निर्छलो  | निर्जरा  | निर्जला | निर्बिसी | निस्तनी   |
+   | नेउको    | नेबुला    | नैकिनी   | नोकरी   | नौगजा    | नौतिरी  | नौबिसे   | नौमती   | नौरथा   | नौलखा  | पक्षिणी  | पग्लँदो    |
+   | पग्लिँदो  | पछ्तिया  | पञ्चमी   | पञ्जिका  | पट्टिका   | पत्थरी   | पत्रिका  | पद्मिनी  | पन्तरो   | पर्वते   | पल्किनी  | पश्चिमी   |
+   | पश्चिमे   | पाइका   | पाइतो   | पाइले    | पाइलो    | पाउनी   | पाउने    | पाउरो   | पाउला   | पाउलो१ | पाउलो२  | पाउसो    |
+   | पाखरी   | पाखुरी   | पाखुरे    | पाखुरो   | पाङ्दुरे    | पाजली   | पाटली   | पाठिका  | पाडरी   | पाण्डरा | पातली   | पातले     |
+   | पातलो   | पादुका   | पारसी   | पालकी   | पालुवा    | पावनी   | पाहुना   | पिप्पली  | पीठिका  | पुंसवत्   | पुत्तिका  | पुत्रिका   |
+   | पुत्रिणी  | पुन्तुरो   | पुर्पुरो   | पुर्बिया  | पुर्सुने     | पुस्तिका  | पूतना    | पूरिका   | पूर्णिमा  | पूर्ववत्  | पूर्वविद्  | पेचिलो    |
+   | पेटिका   | पेटिया   | पेसुवा    | पैजनी    | पैरवी     | पोखरा   | पोखरी   | पोखरो   | पोगटो   | पोटरी  | पोटली   | पोटिलो   |
+   | पोठिया  | पोथरो   | पोसिलो  | पोहटा   | फक्किका   | फट्किरी  | फर्मुला   | फाइदा   | फाटका   | फायदा  | फिट्किरी | फुर्तिलो   |
+   | फुसि्रनी  | फेरुवा    | फैसला    | फोगटा   | फोगटो    | फोरुवा   | फोहरा   | बङ्गडी   | बङ्गला   | बड्कुँलो  | बन्चरे    | बन्चरो    |
+   | बन्धकी१  | बन्धकी२  | बर्दिया  | बाइसी   | बाइसे     | बाउँटे१   | बाउँटे२   | बाउँटो   | बाउँठे    | बाउँठो  | बाउसे    | बाउसो    |
+   | बाकुपौ   | बाग्मती  | बाङ्खुरे   | बाछिटा  | बाजरा    | बाजुरा   | बाजुरो   | बाटुले    | बाटुलो   | बाडुली  | बादरा   | बान्किलो  |
+   | बाफरे    | बाफिलो  | बाबडी   | बाबरी   | बाबियो   | बारना   | बारुले    | बारुलो   | बार्दली  | बालिका | बालुका   | बालुवा    |
+   | बाहिडा  | बाहिरी  | बाहुनी   | बाहुली   | बाहुलो    | बित्तिकै  | बिस्तरा  | बुज्झकी   | बुर्कुसी   | बुर्जुवा  | बेकुफी    | बेयरा     |
+   | बेरुवा    | बेलना    | बेलुका    | बेलुकी    | बेसरी१    | बेसरी२   | बेहुली    | बेह्रुवा   | बैगनी    | बैजनी   | बैतडी    | बोरुवा    |
+   | बोहरी   | भक्तिनी  | भक्तिमान् | भङ्गिमा  | भड्किलो   | भन्नुको   | भर्जनी   | भत्र्सना  | भर्थरी   | भाउँटो  | भाउँरी   | भाउजू     |
+   | भाटिया  | भारती   | भावना   | भाषिका  | भास्वती   | भिक्षुणी  | भित्रिनी | भित्रिया | भूमिका   | भूयशः   | भूयसी    | भूरसी     |
+   | भेडिया   | भेदिया   | भेदुवा    | भैरवी    | भैलिनी    | भोगटे    | भोगिनी  | मक्षिका  | मङ्गला   | मङ्गले   | मञ्जरी   | मड्किलो   |
+   | मण्डली   | मण्डले    | मध्यता   | मध्यमा   | मन्डली    | मन्डले    | मन्तरे    | मन्त्रणा  | मन्त्रिणी | मन्थरा  | मन्सरा   | मर्करी    |
+   | मर्थरी   | मल्लिँडो  | मल्लिका  | मस्करी   | मस्खरा    | माइती   | माइतो   | माइली   | माइलो   | माउते   | माउरी   | माकुरा    |
+   | माकुरी   | माकुरे    | माकुरो   | मागधी   | माङबा    | माधवी   | माधिमे   | माधुरी   | मानसी   | मानिका | मानिता  | मान्दि्रलो |
+   | माफिया  | मामकी   | मामलो   | मामिला  | मामुली    | मारुनी   | मालता   | मालती   | मालिका  | मालिनी | मावली   | माहिली   |
+   | माहिलो  | माहुते    | माहुरी   | माहुरे    | मुड्किलो   | मुद्दती   | मुन्तला   | मुर्कुचा   | मुल्तबी   | मूच्र्छना | मृत्तिका  | मेखला     |
+   | मेडुसा    | मेदिनी   | मेनका    | मेहदी    | मेहरो     | मेहले     | मोजरा   | मोटिलो  | मोतिया  | मोरचा  | मोहडा   | मोहनी    |
+   | मोहरा   | मोहिनी  | मोहिया  | मौलवी   | मौसमी    | यस्तरी   | याचिका  | यातना   | यामिनी  | योगिनी | योग्यता  | योजना    |
+   | योमरी   | रक्तिनी  | रङ्गिलो  | राउटे    | राक्षसी   | राजसी   | राजिका  | राधिका  | रापती   | रापिलो | राबडी   | राम्ररी   |
+   | रुक्मिणी  | रुप्सिलो  | रूपवान्   | रूपसी    | रूपिणी    | रेचकी    | रेडियो   | रेतिलो   | रेफरी    | रेवती   | रैक्रिया  | रोइला    |
+   | रोचना   | रोटरी   | रोपनी   | रोपवे    | रोपुवा    | रोहिणी  | लक्षणा   | लङ्गडा   | लङ्गडो   | लङ्गुरे   | लङ्गुरो   | लच्किलो   |
+   | लच्छिमी  | लम्बरी   | लम्बिका  | लर्तरो   | लस्करी    | लाउके    | लाम्चिलो | लालिमा  | लाहुरी   | लाहुरे   | लुम्बिनी  | लेखनी     |
+   | लेखिका   | लेखुवा    | लेसिलो   | लैबरी    | लोकडो    | लोकती   | लोकतो   | लोचना   | लोमुते    | लोलरा  | लोहसे    | लोहिया   |
+   | वर्तिका  | वल्लरी   | वस्तुतः   | वाइबा   | वाग्मती   | वाजबी   | वाटिका  | वारुणी   | वालुका   | वासना  | वाहिनी  | वीटिका   |
+   | वेदना    | वैखरी    | वैष्णवी   | शङ्खिनी  | शर्करा    | शर्वरी   | शाकिनी  | शारदा   | शारिका  | शार्वरी | शालिनी  | शासना    |
+   | शिंशपा   | शिक्षिका | शिञ्जिनी | शीतला   | शृङ्खला    | षष्ठिका  | षोडशा   | षोडशी   | संविदा   | सक्नुको  | सङ्कटा   | सङ्खिया   |
+   | सङ्गिनी  | सत्तरी१  | सत्तरी२  | सत्यवान्  | सन्जना    | सन्टरी   | सन्तरी   | सप्तमी   | सप्तरी   | सम्झना  | सम्धिनी  | सम्पदा    |
+   | सर्किनी  | सर्वजा   | सर्वजित्  | सर्वतः   | सर्वथा    | सर्वदा   | साइँली   | साइँलो   | साउती   | साउने   | साकिनी  | साक्षरी   |
+   | साखिने   | सात्त्वती | सादगी   | साधना   | साधिका   | सानिमा  | सान्त्वना | सापिलो  | सामना   | सामरी  | सामलो   | सारणी    |
+   | सारनी   | सारवान्  | सारिका  | सारिणी  | सालिभे    | सावरी१  | सावरी२  | सासना   | साहिँली  | साहिँलो | साहुती   | सिङ्गुलै    |
+   | सिन्दुरे   | सिन्धुली  | सिर्जना  | सुन्तला   | सुप्तली    | सुम्पुवा   | सुल्पुङे    | सूचना    | सूतिका   | सेउली   | सेउलो    | सेकुवा     |
+   | सेपिलो   | सेलिया   | सेवडा    | सेवती    | सेविका    | सोधनी   | सोभिता  | सोरठी   | सोरही   | सोहरा  | सौतिनी  | सौतिने    |
+   | हत्तिनी  | हल्लुँडे    | हल्लुँडो   | हस्तिनी  | हाउडे     | हाउलो   | हाजिरा  | हाजिरी  | हाप्सिलो | हीनता  | हेगुवा    | होजरी    |
+   | होलिका  | हौसला   |         |         |          |         |         |         |         |        |         |          |
+
+* One step further!
+
+  I mentioned that, I happen to have a dictionary instead of just files. So, can we make the program suggest some relevant words, that happen to match गण criteria?
+
+** Graph of Word Relations
+Lets create a structure to hold words and its information. And a hashtable to lookup words.
+#+begin_src lisp :tangle nil
+  (defparameter *words* (make-hash-table :test #'equal))
+
+  (defstruct word
+    (edges (list) :type list)
+    (गण nil :type list)
+    (word "" :type string)
+    (meaning "" :type string))
+
+  (defmethod print-object ((w word) stream)
+    (print-unreadable-object (w stream)
+      (format stream "~a" (word-word w))))
+
+  (defun get-word (word &optional (table *words*))
+    (or (gethash word table)
+	(let ((w (make-word :गण (maatra word)
+			    :edges nil
+			    :word word)))
+	  (setf (gethash word table) w)
+	  w)))
+#+end_src
+
+# Modified code that is actually tangled
+#+begin_src lisp :exports none
+  (defparameter *words* (make-hash-table :test #'equal))
+
+  (defstruct word
+    (edges (list) :type list)
+    (गण nil :type list)
+    (word "" :type string)
+    (meaning "" :type string)
+    (popularity 1 :type integer))
+
+  (defmethod print-object ((w word) stream)
+    (print-unreadable-object (w stream)
+      (format stream "~a" (word-word w))))
+
+  (defun calculate-popularities ()
+    ;; reset
+    (maphash (lambda (key word)
+	       (declare (ignore key))
+	       (setf (word-popularity word) 1))
+	     ,*words*)
+    ;; compute
+    (maphash (lambda (key word)
+	       (declare (ignore key))
+	       (loop for e in (word-edges word) do
+		 (incf (word-popularity e))))
+	     ,*words*))
+
+  (defun get-word (word &optional (table *words*))
+    (or (gethash word table)
+	(let ((w (make-word :गण (maatra word)
+			    :edges nil
+			    :word word)))
+	  (setf (gethash word table) w)
+	  w)))
+#+end_src
+
+Now we can traverse the dictionary entries and add all the words that appear in the meaning/definition of a word into its ~edges~. This effectively create a graph (with maybe loops toos).
 #+begin_src lisp
-  (defun cleanup (word)
-    (let ((dirty "१२३४५६७८९०"))
-      (remove-if (lambda (c)
-		   (find c dirty :test #'char=))
-		 word)))
+(defun update-edges (word new-edges table)
+    (with-slots (edges) word 
+      (loop for e in new-edges do 
+	(pushnew (get-word e table) edges :test #'equal))))
 
-  (defun find-गण (गण)
-    (loop for (word . meaning) in *dict*
-	  when (equal (maatra (cleanup word)) गण)
-	    collect word))
+  (defun create-graph ()
+    (loop with table = (make-hash-table :test #'equal :size (expt 10 6))
+	  for (w meaning . rest) in *dict*
+	  for relatives = (remove-if #'null (mapcar #'cleanup (uiop:split-string meaning :separator " ।.-;")))
+	  do
+	     (let ((words (uiop:split-string w :separator "/")))
+	       ;; some dictinary entries are like अँगरखा/अँगर्खा
+	       (loop for word in words
+		     for w = (get-word (cleanup word) table) do
+		       (update-edges w relatives table)
+		       (setf (word-meaning w) meaning)))
+	  finally (setf *words* table)))
 #+end_src
 
-Example: (for र-गण)
-#+begin_src lisp :exports both
-  (u:batches (find-गण '(:ई :क :ई)) 12)
+** Filter
+   We can now search for words in a words edges that match certain properties like belogning to a certain गण. 
+
+#+begin_src lisp
+  (defun गणp-f (गण)
+    "returns a function that check if its argument is of given `गण'"
+    (lambda (word)
+      (equal (word-गण word) गण)))
+
+  (defun filter (word depth filter-function &optional bag)
+    "Collect words in the word graph that satisfy `filter' by travesing edges upto `depth'"
+    (cond ((= depth 0)
+	   bag)
+	  (t
+	   (loop for w in (word-edges word) do
+	     (when (funcall filter-function w)
+	       (pushnew w bag))
+	     (setf bag (filter w (1- depth) filter-function bag)))
+	   bag)))
+
+   #+end_src
+
+
+   Lets test.
+
+   #+begin_src lisp :exports both :tangle nil
+     (create-graph)
+     (filter (get-word "कमल") 2 (गणp-f '(:क :क :क)))
+   #+end_src
+
+   #+RESULTS:
+   : (#<जसद> #<खनिज> #<पतन> #<मरण> #<अपर> #<तरुल> #<उपर> #<सदृश> #<किरण> #<कुमुद>
+   :  #<कमल>)
+
+** Sorting 
+As always, a good sorting makes a huge difference. We need a priority mechanism to sort the recommendations for the matches we got previously. Some criteria for priority could be the depth, popularity/frequency of word in the language, repeatedness in the graph. 
+
+Lets define a few terms:
++ a word is said to refer to another word, when the second word appears in the definition/meaning of the first word
++ popularity of a word is the an integer (ρ) = number of words which refer to it 
++ direct closeness of a word (w₁) with another word (w₂) is (κ) = max(ξ₁₂/ρ₂, ξ₂₁/ρ₁); where ξᵢⱼ = 1 if ith word refers to jth word else 0.
+  + This defintion is commutative, and the closeness of words decreases when their popularity increases. i.e. popular words like हरु may appear in lots of definitions and thus they are less close to other words.
+    
+We now have a measure of closeness of words (directly connected to each other) based on their popularity. Lets incorporate the depth of graph, and interconnectedness of words. The idea I have is that the closeness of words cumulates over connection paths in the graph. Concretely the closeness of words which are not directly connected increases (~sum~) with the number of paths connecting them and the strength of each path decreases (~product~) with the length of path. 
+
+I define the ~sum~ as: $min(∑κᵢ, 1)$ i.e. if two words are connected by paths of closeness κ₁, κ₂, ..., kₙ then, new closeness of those words is $κ₁ + κ₂+...+ kₙ$ subject to a maximum of 1. 
+
+And I define the ~product~ as: $∏ κᵢ$. i.e. if two words are connected by path of length $n$ and the closeness of consecutive words in the path is $κᵢ$ then, the closeness due to that path would be $κ₁ * κ₂ * ... * κₙ$.
+
+Note that to compute the closeness according to these definitions, all possible paths between two words must be considered and the sum of products be computed. This may seem computationally intensive but since our ~product~ function is associative, computatoin is easy (as given in ~filter2%~ function). 
+
+(I had first tried defining ~product~ as $\frac 1 {(∑ \frac 1 {k_i})}$ (which is also associative) but it didn't give satisfactory result.)
+
+*** Popularity
+    We have to modify the word struct to add a popularity slot. Then ~calculate-popularities~ can compute the popularity of each word and store it in the popularity slot.
+#+begin_src lisp :tangle nil
+  (defstruct word
+    (edges (list) :type list)
+    (गण nil :type list)
+    (word "" :type string)
+    (meaning "" :type string)
+    (popularity 1 :type integer))
+
+  (defmethod print-object ((w word) stream)
+    (print-unreadable-object (w stream)
+      (format stream "~a - ~d,~d" (word-word w) (length (word-edges w)) (word-popularity w))))
+
+  (defun calculate-popularities ()
+    ;; reset
+    (maphash (lambda (key word)
+	       (declare (ignore key))
+	       (setf (word-popularity word) 1))
+	     ,*words*)
+    ;; compute
+    (maphash (lambda (key word)
+	       (declare (ignore key))
+	       (loop for e in (word-edges word) do
+		 (incf (word-popularity e))))
+	     ,*words*))
 #+end_src
 
-#+RESULTS:
-| अक्षता   | अक्षमा   | अङ्कुसे    | अङ्गना   | अङ्गिका   | अङ्गुठो   | अन्ततः   | अन्तरा   | अन्तरी   | अन्तरे   | अप्सरा   | अफि्रका   |
-| अम्बिका  | अमि्रसो  | अम्लिसो  | अर्कना   | अर्गला    | अर्थुबो   | अर्दली   | अर्निको  | अर्मले    | अल्पता  | अश्विनी  | अष्टमी    |
-| अस्तुरा   | अस्मिता  | आउँदो    | आउती    | आउनी     | आउरे     | आगरी    | आग्रही   | आडिलो   | आत्तुरी  | आदमी    | आरती१    |
-| आरती२   | आरसी    | आलुचा    | आसरा    | आसुरी     | इङ्गला   | इत्तरो   | इन्दिरा  | इष्टका   | इस्तिफा | इस्तिरी  | उघ्रँदो    |
-| उच्चता   | उत्तमा   | उत्तरा   | उन्मनी   | उब्जनी    | उर्वरा   | उर्वशी   | एउटा    | एकता    | एकले    | एकलै     | एकलो     |
-| एकुवा    | एकुवा    | एक्सरे    | एत्रुको   | एषणा     | एसिया   | कङ्कला   | कङ्गना   | कच्चिडो  | कट्कुरो  | कड्कँुलो   | कण्डिका   |
-| कन्जरो   | कन्दनी   | कन्दरा   | कन्धनी   | कन्सिरी   | कम्तिया  | कम्पनी   | कर्कली   | कर्कलो   | कर्चुलो  | कर्छुली   | कर्णिका   |
-| कर्तरी   | कर्मणा   | कल्पना   | कल्लिया  | कस्तरी    | कस्मिरी  | काइँयो   | काइँली   | काइँलो   | काइते   | काइदा   | काइना    |
-| काउछे    | काउछो   | काउडो   | काउली१  | काउली२   | काउलो   | काउसे    | काउसो   | काकली   | कागजी  | कागती   | कागते     |
-| काङ्गियो | काठिया  | कात्तिके  | कानुनी   | कान्तिमान् | काबुली   | कामदी   | कामना   | कामला   | कामिता | कामिनी  | कायदा    |
-| कारणी   | कारिका  | कारिणी  | कारिता  | कालिका   | कालिमा  | काल्टिकी | काशिका  | कास्मिरी | काहिँली | काहिँलो  | किङ्किणी  |
-| किङ्गरी  | किर्किटी | कुञ्चिका  | कुप्रथा   | कुम्भिका   | कुर्कुरे    | कुर्सिँलो  | कुर्सियो  | कुल्कुली   | कृत्तिका | केतुवा    | केत्तुके     |
-| केवँरा    | केशरी    | केसरी    | कैपुँचा    | कैरुवा     | कोइरी   | कोइला   | कोइली   | कोइलो   | कोकरी  | कोकले    | कोकिला   |
-| कोगिटा  | कोटिला  | कोटिशः  | कोठरी   | कोपरा    | कोरली   | कोरलो   | कौतुकी   | कौमुदी   | कौशिकी | खड्कुँली   | खड्कुँलो    |
-| खण्डिता  | खन्चुरो   | खन्चुवा   | खन्तरे    | खप्टुवा    | खर्चरी   | खर्चिलो  | खल्लने    | खस्मिनी  | खाइबा  | खानगी   | खानसा    |
-| खाप्सियो | खारिलो  | खालिसा  | खिङ्गुली  | खुट्किलो   | खुड्किलो  | खुत्रुके    | खेचरी    | खेदुवा    | खेपुवा   | खेलुवा    | खेवरा     |
-| खोइरे    | खोइरो१  | खोइरो२  | खोइलो   | खोकिलो   | खोपडी   | खोरिया  | खोसुवा   | खौकिया  | गण्डकी  | गन्जिफा  | गन्दगी    |
-| गन्धिलो  | गब्रुवा   | गर्जने    | गर्भिणी  | गहु्रँगो    | गहु्रको   | गाइने    | गाउजो   | गायिका  | गायिनी | गुम्सँदो   | गेमरा     |
-| गेवँरा    | गोकुले    | गोतिया  | गोपिका  | गोपिनी   | गोरखा   | गोलिँदो  | गोलिया  | गोलुवा   | गौ”डा  | गौ”डे    | गौ”डो    |
-| गौमुखी   | गौमुखे    | गौरिया  | घण्टिका  | घाइते     | घुँग्रुके    | घुड्रुके    | घुर्घुरे    | घुर्बिसो  | घुर्मिलो | घोगचा   | घोटुवा    |
-| घोलुवा   | घोषणा   | चञ्चला   | चञ्चले    | चण्डिका   | चन्चले    | चन्द्रमा  | चन्दि्रका | चम्किलो  | चर्चरी  | चर्चरे    | चर्चरो    |
-| चर्पटी   | चर्पटे    | चाउथो   | चाउरी   | चाउरे     | चाउलो   | चाकडी   | चाकरी   | चाखुरो   | चातुरी  | चाम्मुठी  | चालिसे    |
-| चासनी१  | चासनी२  | चाहिँदो  | चित्रिणी | चिर्कटो१  | चिर्कटो२ | चिर्भटी  | चूलिका   | चेतना    | चेपिलो  | चेपुवा    | चेहरा     |
-| चोइटा   | चोइटो   | चोइली   | चोइलो   | चौकडा    | चौकुना   | चौखुँडा   | चौगडा   | चौगरो   | चौगुना  | चौघडा   | चौघडी    |
-| चौघडी   | चौघरा   | चौधरी   | छाउनी   | छाउरा    | छाउरो   | छाकलो   | छाहरी   | छेउला    | छेउलो   | छेकुवा    | छेस्करा    |
-| छेस्किनी  | छैमलो    | छोकडा१  | छोकडा२  | छोयला    | छौ”डा   | छौ”डी   | छौ”डो   | जङ्गली   | जन्तरे   | जर्खरो   | जर्बुटो    |
-| जर्मनी   | जाउली   | जाउले    | जाउलो   | जानकी    | जाम्बवान् | जायजा   | जारिणी  | जालिका  | जालिनी | जाह्नवी  | जिन्दगी   |
-| जीवनी   | जीविका  | जुन्किरी  | जेउडो    | जेसुकै      | जैसिनी   | जोइसी   | जोखना   | जोगिनी  | जोरही  | जोलिया  | जोसुकै     |
-| जौहरी   | झक्कले    | झक्कलो   | झल्लरी   | झल्लिका   | झिल्लिका | झिल्सिँदो | झेउवा    | झोपडी   | झोलिनी | झोलिलो  | टङ्किका   |
-| टट्टरी   | टर्कटी   | टाउके    | टाउको   | टाकुरी    | टाकुरो   | टाटरी   | टाडरी   | टापुरो   | टिप्पणी | टिर्टिरे  | टी० बी०  |
-| टेकुवा    | टोकरी   | टोकसो   | ठाइँली   | ठाइँलो    | ठाहिँली  | ठाहिँलो  | ठेउको    | ठेउला    | ठेउवा   | ठेकुवा१   | ठेकुवा२    |
-| ठेटुवा    | ठेलुवा    | ठोकने    | ठोकुवा   | ठोटरी    | डङ्किनी  | डाइनी   | डाकिनी  | डाडनी   | डायरी  | डिम्बिका | डे”ढी     |
-| डेउढा    | डेउढी    | डेउढो    | डेपुटी    | डोबटी    | डोब्किलो | डोरिया  | डौ”ठे    | ढामरा   | ढिस्कुरो | ढुङ्गिलो  | ढेउसी     |
-| ढेसरो    | तर्कना   | तर्जुमा   | ताउली   | ताउलो    | ताकिता  | ताडका   | ताडनी   | तारिका  | तालिका | तिब्बती  | तिर्सना   |
-| तीजरो   | तेजिलो१  | तेजिलो२  | तेलिया   | तेहरो     | तौलिया  | थाउलो   | थापना   | थालनी   | थुम्किलो | थेगि्रनी  | थेचरो     |
-| थेत्तरो   | दक्षिणा  | दक्षिणी  | दन्कुटी   | दम्किलो   | दम्पती   | दर्बिलो  | दर्सनी   | दहि्रलो  | दाइजो  | दाउनी   | दाउरा    |
-| दाउरो   | दाखिला  | दादनी   | दादरा   | दादुरा    | दाबिले   | दाबिलो  | दामली   | दामिनी  | दायरा  | दायरी   | दारिका   |
-| दार्चुला  | दाहिने   | दाहिनो  | दिल्लगी  | दीपिका   | दुर्दशा   | दुर्मना   | दूषिका   | देउकी    | देउडा   | देउता    | देउती     |
-| देउते     | देउमा    | देउला१   | देउला२   | देउले      | देउसी    | देवता    | देशना    | देहली    | दोकडा  | दोकला   | दोगला    |
-| दोजिया  | दोतला   | दोदरा   | दोभरा   | दोलखा    | दोलिका  | दोहरे    | दोहरो   | दोहलो   | धर्मिणी | धाउनी   | धामिनी   |
-| धारणा   | धारिणी  | धारिलो  | धुत्तुरी   | धुमि्रँदो   | धोकुवा   | धोबिनी  | नक्कली   | नक्कले    | नन्दिनी | नम्बरी   | नर्मदा    |
-| नर्सरी   | नाइके    | नाइटे    | नाइटो   | नाकिमा   | नाकुली   | नागरी   | नागिनी  | नाटिका  | नातिने  | नायिका  | नारकी    |
-| नालिका  | नासिका  | नासिकी  | निम्छरो  | निम्सरो   | निर्घिनी | निर्छली  | निर्छलो  | निर्जरा  | निर्जला | निर्बिसी | निस्तनी   |
-| नेउको    | नेबुला    | नैकिनी   | नोकरी   | नौगजा    | नौतिरी  | नौबिसे   | नौमती   | नौरथा   | नौलखा  | पक्षिणी  | पग्लँदो    |
-| पग्लिँदो  | पछ्तिया  | पञ्चमी   | पञ्जिका  | पट्टिका   | पत्थरी   | पत्रिका  | पद्मिनी  | पन्तरो   | पर्वते   | पल्किनी  | पश्चिमी   |
-| पश्चिमे   | पाइका   | पाइतो   | पाइले    | पाइलो    | पाउनी   | पाउने    | पाउरो   | पाउला   | पाउलो१ | पाउलो२  | पाउसो    |
-| पाखरी   | पाखुरी   | पाखुरे    | पाखुरो   | पाङ्दुरे    | पाजली   | पाटली   | पाठिका  | पाडरी   | पाण्डरा | पातली   | पातले     |
-| पातलो   | पादुका   | पारसी   | पालकी   | पालुवा    | पावनी   | पाहुना   | पिप्पली  | पीठिका  | पुंसवत्   | पुत्तिका  | पुत्रिका   |
-| पुत्रिणी  | पुन्तुरो   | पुर्पुरो   | पुर्बिया  | पुर्सुने     | पुस्तिका  | पूतना    | पूरिका   | पूर्णिमा  | पूर्ववत्  | पूर्वविद्  | पेचिलो    |
-| पेटिका   | पेटिया   | पेसुवा    | पैजनी    | पैरवी     | पोखरा   | पोखरी   | पोखरो   | पोगटो   | पोटरी  | पोटली   | पोटिलो   |
-| पोठिया  | पोथरो   | पोसिलो  | पोहटा   | फक्किका   | फट्किरी  | फर्मुला   | फाइदा   | फाटका   | फायदा  | फिट्किरी | फुर्तिलो   |
-| फुसि्रनी  | फेरुवा    | फैसला    | फोगटा   | फोगटो    | फोरुवा   | फोहरा   | बङ्गडी   | बङ्गला   | बड्कुँलो  | बन्चरे    | बन्चरो    |
-| बन्धकी१  | बन्धकी२  | बर्दिया  | बाइसी   | बाइसे     | बाउँटे१   | बाउँटे२   | बाउँटो   | बाउँठे    | बाउँठो  | बाउसे    | बाउसो    |
-| बाकुपौ   | बाग्मती  | बाङ्खुरे   | बाछिटा  | बाजरा    | बाजुरा   | बाजुरो   | बाटुले    | बाटुलो   | बाडुली  | बादरा   | बान्किलो  |
-| बाफरे    | बाफिलो  | बाबडी   | बाबरी   | बाबियो   | बारना   | बारुले    | बारुलो   | बार्दली  | बालिका | बालुका   | बालुवा    |
-| बाहिडा  | बाहिरी  | बाहुनी   | बाहुली   | बाहुलो    | बित्तिकै  | बिस्तरा  | बुज्झकी   | बुर्कुसी   | बुर्जुवा  | बेकुफी    | बेयरा     |
-| बेरुवा    | बेलना    | बेलुका    | बेलुकी    | बेसरी१    | बेसरी२   | बेहुली    | बेह्रुवा   | बैगनी    | बैजनी   | बैतडी    | बोरुवा    |
-| बोहरी   | भक्तिनी  | भक्तिमान् | भङ्गिमा  | भड्किलो   | भन्नुको   | भर्जनी   | भत्र्सना  | भर्थरी   | भाउँटो  | भाउँरी   | भाउजू     |
-| भाटिया  | भारती   | भावना   | भाषिका  | भास्वती   | भिक्षुणी  | भित्रिनी | भित्रिया | भूमिका   | भूयशः   | भूयसी    | भूरसी     |
-| भेडिया   | भेदिया   | भेदुवा    | भैरवी    | भैलिनी    | भोगटे    | भोगिनी  | मक्षिका  | मङ्गला   | मङ्गले   | मञ्जरी   | मड्किलो   |
-| मण्डली   | मण्डले    | मध्यता   | मध्यमा   | मन्डली    | मन्डले    | मन्तरे    | मन्त्रणा  | मन्त्रिणी | मन्थरा  | मन्सरा   | मर्करी    |
-| मर्थरी   | मल्लिँडो  | मल्लिका  | मस्करी   | मस्खरा    | माइती   | माइतो   | माइली   | माइलो   | माउते   | माउरी   | माकुरा    |
-| माकुरी   | माकुरे    | माकुरो   | मागधी   | माङबा    | माधवी   | माधिमे   | माधुरी   | मानसी   | मानिका | मानिता  | मान्दि्रलो |
-| माफिया  | मामकी   | मामलो   | मामिला  | मामुली    | मारुनी   | मालता   | मालती   | मालिका  | मालिनी | मावली   | माहिली   |
-| माहिलो  | माहुते    | माहुरी   | माहुरे    | मुड्किलो   | मुद्दती   | मुन्तला   | मुर्कुचा   | मुल्तबी   | मूच्र्छना | मृत्तिका  | मेखला     |
-| मेडुसा    | मेदिनी   | मेनका    | मेहदी    | मेहरो     | मेहले     | मोजरा   | मोटिलो  | मोतिया  | मोरचा  | मोहडा   | मोहनी    |
-| मोहरा   | मोहिनी  | मोहिया  | मौलवी   | मौसमी    | यस्तरी   | याचिका  | यातना   | यामिनी  | योगिनी | योग्यता  | योजना    |
-| योमरी   | रक्तिनी  | रङ्गिलो  | राउटे    | राक्षसी   | राजसी   | राजिका  | राधिका  | रापती   | रापिलो | राबडी   | राम्ररी   |
-| रुक्मिणी  | रुप्सिलो  | रूपवान्   | रूपसी    | रूपिणी    | रेचकी    | रेडियो   | रेतिलो   | रेफरी    | रेवती   | रैक्रिया  | रोइला    |
-| रोचना   | रोटरी   | रोपनी   | रोपवे    | रोपुवा    | रोहिणी  | लक्षणा   | लङ्गडा   | लङ्गडो   | लङ्गुरे   | लङ्गुरो   | लच्किलो   |
-| लच्छिमी  | लम्बरी   | लम्बिका  | लर्तरो   | लस्करी    | लाउके    | लाम्चिलो | लालिमा  | लाहुरी   | लाहुरे   | लुम्बिनी  | लेखनी     |
-| लेखिका   | लेखुवा    | लेसिलो   | लैबरी    | लोकडो    | लोकती   | लोकतो   | लोचना   | लोमुते    | लोलरा  | लोहसे    | लोहिया   |
-| वर्तिका  | वल्लरी   | वस्तुतः   | वाइबा   | वाग्मती   | वाजबी   | वाटिका  | वारुणी   | वालुका   | वासना  | वाहिनी  | वीटिका   |
-| वेदना    | वैखरी    | वैष्णवी   | शङ्खिनी  | शर्करा    | शर्वरी   | शाकिनी  | शारदा   | शारिका  | शार्वरी | शालिनी  | शासना    |
-| शिंशपा   | शिक्षिका | शिञ्जिनी | शीतला   | शृङ्खला    | षष्ठिका  | षोडशा   | षोडशी   | संविदा   | सक्नुको  | सङ्कटा   | सङ्खिया   |
-| सङ्गिनी  | सत्तरी१  | सत्तरी२  | सत्यवान्  | सन्जना    | सन्टरी   | सन्तरी   | सप्तमी   | सप्तरी   | सम्झना  | सम्धिनी  | सम्पदा    |
-| सर्किनी  | सर्वजा   | सर्वजित्  | सर्वतः   | सर्वथा    | सर्वदा   | साइँली   | साइँलो   | साउती   | साउने   | साकिनी  | साक्षरी   |
-| साखिने   | सात्त्वती | सादगी   | साधना   | साधिका   | सानिमा  | सान्त्वना | सापिलो  | सामना   | सामरी  | सामलो   | सारणी    |
-| सारनी   | सारवान्  | सारिका  | सारिणी  | सालिभे    | सावरी१  | सावरी२  | सासना   | साहिँली  | साहिँलो | साहुती   | सिङ्गुलै    |
-| सिन्दुरे   | सिन्धुली  | सिर्जना  | सुन्तला   | सुप्तली    | सुम्पुवा   | सुल्पुङे    | सूचना    | सूतिका   | सेउली   | सेउलो    | सेकुवा     |
-| सेपिलो   | सेलिया   | सेवडा    | सेवती    | सेविका    | सोधनी   | सोभिता  | सोरठी   | सोरही   | सोहरा  | सौतिनी  | सौतिने    |
-| हत्तिनी  | हल्लुँडे    | हल्लुँडो   | हस्तिनी  | हाउडे     | हाउलो   | हाजिरा  | हाजिरी  | हाप्सिलो | हीनता  | हेगुवा    | होजरी    |
-| होलिका  | हौसला   |         |         |          |         |         |         |         |        |         |          |
+*** Closeness 
+#+begin_src lisp
+  (defun κ (word1 word2)
+    (if (eql word1 word2)
+	:infinity 
+	(max (if (find word2 (word-edges word1)) (/ 1 (word-popularity word2)) 0)
+	     (if (find word1 (word-edges word2)) (/ 1 (word-popularity word1)) 0))))
+
+  (defun κ* (k1 k2)
+    (cond ((eql :infinity k1) k2)
+	  ((eql :infinity k2) k1)
+	  (t (* k1 k2))))
+
+  (defun κ+ (k1 k2)
+    (min (+ k1 k2) 1))
+#+end_src
+
+*** New Filtering 
+#+begin_src lisp
+  (defun filter2% (word depth filter-function &optional bag closeness-table)
+    (declare (optimize (speed 0) (debug 3) (safety 3)))
+    (labels ((c (w)
+	       (gethash w closeness-table 0))
+	     (κ++ (w increment)
+	       (setf (gethash w closeness-table)
+		     (κ+ (c w)
+			 increment))))
+      (cond ((= depth 0)
+	     bag)
+	    (t
+	     (loop for w in (word-edges word) do
+	       (when (funcall filter-function w)
+		 (pushnew w bag))
+	       (unless (or (eql w word) (eql (c w) :infinity))
+		 (κ++ w (κ* (κ w word) (c word)))
+		 (setf bag (filter2% w (1- depth) filter-function bag closeness-table))))
+	     bag))))
+
+  (defun filter2 (word depth filter-function)
+    (let ((closeness-table (make-hash-table)))
+      (setf (gethash word closeness-table) :infinity)
+      (sort (mapcar (lambda (w) 
+		      (cons w (float (gethash w closeness-table))))
+		    ;; filter then remove yourself if present
+		    (remove word (filter2% word depth filter-function () closeness-table)))
+	    ;; sort by closeness-table value
+	    #'> :key #'cdr)))
+#+end_src
+
+*** Test
+    #+begin_src lisp :exports both :tangle nil
+      (calculate-popularities)
+      (filter2 (get-word "कमल") 2 (गणp-f '(:क :क :क)))
+    #+end_src
+
+    #+RESULTS:
+    : ((#<कुमुद> . 0.33333334) (#<किरण> . 0.010416667) (#<जसद> . 0.0025252525)
+    :  (#<सदृश> . 0.001418646) (#<उपर> . 9.1827364e-4) (#<तरुल> . 5.144033e-4)
+    :  (#<खनिज> . 1.4854426e-4) (#<पतन> . 5.2753745e-5) (#<मरण> . 3.887118e-5)
+    :  (#<अपर> . 3.4766887e-5))
+
+    Compared to an unordered list, above is a little bit helpful. If we set the cutoff for closeness at 0.02. Then (for न-गण)
+    #+begin_src lisp :exports both :tangle nil
+      (remove-if (lambda (k)
+		   (< k 0.02))
+		 (filter2 (get-word "कमल") 2 (गणp-f '(:क :क :क)))
+		 :key #'cdr)
+    #+end_src
+
+    #+RESULTS:
+    : ((#<कुमुद> . 0.33333334))
+
+    and for र-गण
+    #+begin_src lisp :exports both :tangle nil
+      (remove-if (lambda (k)
+		   (< k 0.02))
+		 (filter2 (get-word "कमल") 2 (गणp-f '(:ई :क :ई)))
+		 :key #'cdr)
+    #+end_src
+
+    #+RESULTS:
+    : ((#<पोखरी> . 0.029411765) (#<फेदमा> . 0.023809524))
