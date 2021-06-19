@@ -9,15 +9,15 @@
    #+begin_src lisp
      (ql:quickload '(:serapeum :alexandria))
 
-     (uiop:define-package #:chhanda/utils
+     (uiop:define-package #:छन्द/utils
 	 (:use :cl :serapeum :alexandria)
        (:reexport :serapeum :alexandria))
 
-     (defpackage #:chhanda
+     (defpackage #:छन्द
        (:use :cl)
-       (:local-nicknames (#:u #:chhanda/utils)))
+       (:local-nicknames (#:u #:छन्द/utils)))
 
-     (in-package #:chhanda)
+     (in-package #:छन्द)
 
      (defun replace-all (pattern result seq)
        "Replace all occurance of `pattern' with `result' in sequence `seq'"
@@ -83,13 +83,13 @@
 				   (transform seq)
 				   seq))))
 
-       (defun maatra (word)
+       (defun मात्रा (word)
 	 (transform (map 'list #'canonicalize word)))
      #+end_src
 
    Let's check:
    #+begin_src lisp :exports both :tangle nil
-     (maatra "अच्युतम्")
+     (मात्रा "अच्युतम्")
    #+end_src
 
    #+RESULTS:
@@ -112,7 +112,7 @@
 
      (defun find-गण (गण)
        (loop for (word . meaning) in *dict*
-	     when (equal (maatra (cleanup word)) गण)
+	     when (equal (मात्रा (cleanup word)) गण)
 	       collect word))
    #+end_src
 
@@ -227,7 +227,7 @@ Lets create a structure to hold words and its information. And a hashtable to lo
 
   (defun get-word (word &optional (table *words*))
     (or (gethash word table)
-	(let ((w (make-word :गण (maatra word)
+	(let ((w (make-word :गण (मात्रा word)
 			    :edges nil
 			    :word word)))
 	  (setf (gethash word table) w)
@@ -264,7 +264,7 @@ Lets create a structure to hold words and its information. And a hashtable to lo
 
   (defun get-word (word &optional (table *words*))
     (or (gethash word table)
-	(let ((w (make-word :गण (maatra word)
+	(let ((w (make-word :गण (मात्रा word)
 			    :edges nil
 			    :word word)))
 	  (setf (gethash word table) w)
@@ -341,7 +341,7 @@ I define the ~sum~ as: $min(∑κᵢ, 1)$ i.e. if two words are connected by pat
 
 And I define the ~product~ as: $∏ κᵢ$. i.e. if two words are connected by path of length $n$ and the closeness of consecutive words in the path is $κᵢ$ then, the closeness due to that path would be $κ₁ * κ₂ * ... * κₙ$.
 
-Note that to compute the closeness according to these definitions, all possible paths between two words must be considered and the sum of products be computed. This may seem computationally intensive but since our ~product~ function is associative, computatoin is easy (as given in ~filter2%~ function). 
+Note that to compute the closeness according to these definitions, all possible paths between two words must be considered and the sum of products be computed. This may seem computationally intensive but since our ~product~ function is associative, computation is easy (as given in ~filter2%~ function). 
 
 (I had first tried defining ~product~ as $\frac 1 {(∑ \frac 1 {k_i})}$ (which is also associative) but it didn't give satisfactory result.)
 
@@ -455,3 +455,5 @@ Note that to compute the closeness according to these definitions, all possible 
 
     #+RESULTS:
     : ((#<पोखरी> . 0.029411765) (#<फेदमा> . 0.023809524))
+
+    These seem to be good recommendations.

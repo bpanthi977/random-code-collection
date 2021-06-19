@@ -1,14 +1,14 @@
 (ql:quickload '(:serapeum :alexandria))
 
-(uiop:define-package #:chhanda/utils
+(uiop:define-package #:छन्द/utils
     (:use :cl :serapeum :alexandria)
   (:reexport :serapeum :alexandria))
 
-(defpackage #:chhanda
+(defpackage #:छन्द
   (:use :cl)
-  (:local-nicknames (#:u #:chhanda/utils)))
+  (:local-nicknames (#:u #:छन्द/utils)))
 
-(in-package #:chhanda)
+(in-package #:छन्द)
 
 (defun replace-all (pattern result seq)
   "Replace all occurance of `pattern' with `result' in sequence `seq'"
@@ -52,7 +52,7 @@
 			    (transform seq)
 			    seq))))
 
-(defun maatra (word)
+(defun मात्रा (word)
   (transform (map 'list #'canonicalize word)))
 
 (defun cleanup (word)
@@ -67,7 +67,7 @@
 
 (defun find-गण (गण)
   (loop for (word . meaning) in *dict*
-	when (equal (maatra (cleanup word)) गण)
+	when (equal (मात्रा (cleanup word)) गण)
 	  collect word))
 
 (defparameter *words* (make-hash-table :test #'equal))
@@ -98,7 +98,7 @@
 
 (defun get-word (word &optional (table *words*))
   (or (gethash word table)
-      (let ((w (make-word :गण (maatra word)
+      (let ((w (make-word :गण (मात्रा word)
 			  :edges nil
 			  :word word)))
 	(setf (gethash word table) w)
