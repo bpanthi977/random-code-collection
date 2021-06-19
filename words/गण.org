@@ -1,5 +1,3 @@
-#+TITLE: गण
-#+Author: Bibek Panthi
 * गण
   Our objective is to find words that belong to certain गण for छन्द writing. 
 
@@ -67,10 +65,9 @@
 
   Then we define ~rules~ for transformation of combinations/tranformation of canonicalized representation. For examples the third rule ~(:ई :क :क्)~ says ~:क~ and ~:क्~ combine to form ~:ई~ i.e. a full letter followed by a half letter is दिर्घ .
 
-  ~tranform~ function simply uses the ~rules~ and the pattern replacing function we defined in Utilities section to perform the transformation. 
+  ~transform~ function simply uses the ~rules~ and the pattern replacing function we defined in Utilities section to perform the transformation. 
  #+begin_src lisp
    (defun canonicalize (char)
-
      (cond ((eql char *viram*) :्)
 	   ((find char *guru*) :ी)
 	   ((find char *guru-letter*) :ई)
