@@ -1,5 +1,6 @@
 (defpackage :einsum
-  (:use :cl))
+  (:use :cl)
+  (:export #:einsum))
 
 (in-package :einsum)
 
@@ -131,8 +132,8 @@ returns list of (index tensor axis)"
 
        ;; allocate resulting array or reuse given array 
        (let ,(unless result-array 
-		`((,result ,(if output-indices
-			       `(make-array (* ,@(map 'list #'index-max output-indices)))))))
+	       `((,result ,(if output-indices
+			       `(make-array (list ,@(map 'list #'index-max output-indices)))))))
 	 ;; now loop!! :) 
 	 ,(labels ((outer-loop (indices expr const)
 		     (loop-over (first indices)
