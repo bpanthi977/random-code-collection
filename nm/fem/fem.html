@@ -1,0 +1,1423 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<!-- 2021-06-27 Sun 13:53 -->
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Finite Element Method - Solid Mechanics</title>
+<meta name="generator" content="Org mode" />
+<meta name="author" content="Bibek Panthi" />
+<link rel="stylesheet" href="file:////home/bpanthi/.emacs.d/modules/org.css">
+<script type="text/javascript">
+// @license magnet:?xt=urn:btih:1f739d935676111cfff4b4693e3816e664797050&amp;dn=gpl-3.0.txt GPL-v3-or-Later
+<!--/*--><![CDATA[/*><!--*/
+     function CodeHighlightOn(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.cacheClassElem = elem.className;
+         elem.cacheClassTarget = target.className;
+         target.className = "code-highlighted";
+         elem.className   = "code-highlighted";
+       }
+     }
+     function CodeHighlightOff(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(elem.cacheClassElem)
+         elem.className = elem.cacheClassElem;
+       if(elem.cacheClassTarget)
+         target.className = elem.cacheClassTarget;
+     }
+    /*]]>*///-->
+// @license-end
+</script>
+<script type="text/x-mathjax-config">
+    MathJax.Hub.Config({
+        displayAlign: "center",
+        displayIndent: "0em",
+
+        "HTML-CSS": { scale: 100,
+                        linebreaks: { automatic: "false" },
+                        webFont: "TeX"
+                       },
+        SVG: {scale: 100,
+              linebreaks: { automatic: "false" },
+              font: "TeX"},
+        NativeMML: {scale: 100},
+        TeX: { equationNumbers: {autoNumber: "AMS"},
+               MultLineWidth: "85%",
+               TagSide: "right",
+               TagIndent: ".8em"
+             }
+});
+</script>
+<script type="text/javascript"
+        src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.0/MathJax.js?config=TeX-AMS_HTML"></script>
+</head>
+<body>
+<div id="content">
+<h1 class="title">Finite Element Method - Solid Mechanics</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#org37a9021">1. Packages &amp; Utilties</a></li>
+<li><a href="#orgb342ebf">2. Input</a>
+<ul>
+<li><a href="#org796ce76">2.1. File Format</a></li>
+<li><a href="#orgc3e875d">2.2. Input Parsing</a></li>
+</ul>
+</li>
+<li><a href="#orgba3f1aa">3. Elasticity Matrix</a></li>
+<li><a href="#orge863714">4. Element Stiffness Matrix</a>
+<ul>
+<li><a href="#org1ba05ca">4.1. Strain</a></li>
+<li><a href="#org8e8b785">4.2. Internal Virtual Work</a></li>
+</ul>
+</li>
+<li><a href="#org5d3e03e">5. Code For Element Stiffness Matrix</a>
+<ul>
+<li><a href="#org248da8b">5.1. Linear Interpolation Function</a></li>
+<li><a href="#orgeacc882">5.2. Element Stiffness Matrix</a></li>
+</ul>
+</li>
+<li><a href="#org1d8bdb3">6. Assembly of Global Stiffness Matrix</a></li>
+<li><a href="#org6526590">7. Solution</a></li>
+<li><a href="#orge39b5f2">8. Visualization</a></li>
+<li><a href="#org7858b6e">9. Complex Meshes</a>
+<ul>
+<li><a href="#orga3fbe26">9.1. Parser</a></li>
+<li><a href="#org525a373">9.2. Solution</a></li>
+</ul>
+</li>
+<li><a href="#orgede63da">10. Utilities</a>
+<ul>
+<li><a href="#org2e67e1a">10.1. Linear Algebra - Pure Common Lisp</a></li>
+<li><a href="#orge2f8f93">10.2. Linear Algebra - GSL (GNU Scientific Library)</a></li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+<p>
+My objective is to use FEM (Finite Element Method) to solve solid mechanics problem of finding body deformation from applied external loads (forces). I followed this excellent article <a href="https://podgorskiy.com/spblog/304/writing-a-fem-solver-in-less-the-180-lines-of-code">Writing a FEM Solve in less than 180 lines of code</a> and rewrote the solver program in Common Lisp. Aditionally, I wrote a few lines for visualizing the problem and solution and also  a mesh file parser to input a complex mesh from <code>gmsh</code> program.
+</p>
+
+<div id="outline-container-org37a9021" class="outline-2">
+<h2 id="org37a9021"><span class="section-number-2">1</span> Packages &amp; Utilties</h2>
+<div class="outline-text-2" id="text-1">
+<p>
+Lets setup a packages, and load some utilities.
+</p>
+
+<p>
+<code>einstein.lisp</code> provides enistein summation notation for writing matrix operation easily. I used it during prototyping to write linear algebra functions. But for bigger model, linear algebra routines from GSL (GNU Scientific Library) are used for better performance.
+</p>
+
+<p>
+<code>linalg.lisp</code> has my naive linear algebra functions. While <code>fastlinalg.lisp</code> provides them using GSL library. (See <a href="#orgede63da">Utilities</a> section)
+</p>
+
+<p>
+<code>parse-mesh.lisp</code> is later used to read mesh from <code>*.msh</code> file. (See <a href="#org7858b6e">9</a> section)
+</p>
+
+<div class="org-src-container">
+<pre class="src src-lisp"><span class="org-comment-delimiter">;; </span><span class="org-comment">for einsum notation</span>
+(load #p<span class="org-string">"~/lisp/rcc/ml/einstein.lisp"</span>)
+
+(<span class="org-keyword">defpackage</span> <span class="org-comment-delimiter">#:</span><span class="org-doc">fem</span>
+  (<span class="org-builtin">:use</span> <span class="org-comment-delimiter">#:</span><span class="org-doc">cl</span> <span class="org-comment-delimiter">#:</span><span class="org-doc">einsum</span>))
+
+(<span class="org-keyword">in-package</span> <span class="org-comment-delimiter">#:</span><span class="org-doc">fem</span>)
+<span class="org-comment-delimiter">;; </span><span class="org-comment">linear algebra utilities</span>
+(load <span class="org-string">"./parse-mesh.lisp"</span>)
+(load <span class="org-string">"./fastlinalg.lisp"</span>)
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orgb342ebf" class="outline-2">
+<h2 id="orgb342ebf"><span class="section-number-2">2</span> Input</h2>
+<div class="outline-text-2" id="text-2">
+<p>
+Lets define input file format for problem input.
+</p>
+</div>
+
+<div id="outline-container-org796ce76" class="outline-3">
+<h3 id="org796ce76"><span class="section-number-3">2.1</span> File Format</h3>
+<div class="outline-text-3" id="text-2-1">
+<p>
+Its easy to explain the input file structure using an example
+</p>
+
+
+<div class="figure">
+<p><img src="./.data/20210625165724-simple_mesh_1.png" alt="20210625165724-simple_mesh_1.png" />
+</p>
+<p><span class="figure-number">Figure 1: </span>Simple Mesh 1</p>
+</div>
+
+<p>
+Above mesh has 4 nodes, and 2 triangluar elements and it is represented as follows (and saved in <code>simple-mesh-input</code> file). The representation is similar to Common Lisp code so that I can use built in reading routines for parsing.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-lisp"><span class="org-comment-delimiter">;; </span><span class="org-comment">all units are SI except E which is in MPa</span>
+
+<span class="org-builtin">:material</span>
+(<span class="org-builtin">:nu</span> .3 <span class="org-builtin">:E</span> 2000) <span class="org-comment-delimiter">;; </span><span class="org-comment">poission ratio and Modulus of Elasticity</span>
+
+<span class="org-builtin">:thickness</span> 1 
+
+<span class="org-builtin">:nodes</span>    <span class="org-comment-delimiter">;; </span><span class="org-comment">coordinates of nodes</span>
+((0 0)
+ (1 0)
+ (0 1)
+ (1 1))
+
+<span class="org-builtin">:elements</span>  <span class="org-comment-delimiter">;; </span><span class="org-comment">trangles are set of 3 nodes; anticlockwise order (a convention we'll use)</span>
+((0 1 2)
+ (1 3 2))
+
+<span class="org-builtin">:constraints</span> <span class="org-comment-delimiter">;; </span><span class="org-comment">displacement constraints</span>
+((0 <span class="org-builtin">:xy</span>)     <span class="org-comment-delimiter">;; </span><span class="org-comment">0th node is fixed in x &amp; y dir </span>
+ (1 <span class="org-builtin">:y</span>))     <span class="org-comment-delimiter">;; </span><span class="org-comment">1th node is fixed in y dir </span>
+
+<span class="org-builtin">:loads</span>       <span class="org-comment-delimiter">;; </span><span class="org-comment">forces at nodal points </span>
+((2 (50 10))
+ (3 (0 10)))
+</pre>
+</div>
+
+<p>
+It can be easily seen, that we have a square body, that has constraints at its bottom and it is stretched with force applied at its top.
+</p>
+</div>
+</div>
+
+<div id="outline-container-orgc3e875d" class="outline-3">
+<h3 id="orgc3e875d"><span class="section-number-3">2.2</span> Input Parsing</h3>
+<div class="outline-text-3" id="text-2-2">
+<p>
+<code>parse-input-file</code> function reads the above defineds input file, and creates a <code>problem</code> instance. 
+</p>
+
+<div class="org-src-container">
+<pre class="src src-lisp">(<span class="org-keyword">defstruct</span> <span class="org-type">material</span>
+  (e)
+  (nu))
+
+(<span class="org-keyword">defstruct</span> <span class="org-type">problem</span>
+  (material)
+  (nodes)
+  (elements)
+  (thickness)
+  (constraints)
+  (loads))
+
+(<span class="org-keyword">defmethod</span> <span class="org-function-name">print-object</span> ((o problem) stream)
+  (print-unreadable-object (o stream)
+    (format stream <span class="org-string">"Nodes:~a, Elements:~a, Materials: ~a, Constraints: ~a, Loads: ~a"</span>
+            (length (problem-nodes o))
+            (length (problem-elements o))
+            (problem-material o)
+            (length (problem-constraints o))
+            (length (problem-loads o)))))
+
+(<span class="org-keyword">defun</span> <span class="org-function-name">make-vector</span> (tree)
+  <span class="org-doc">"Returns a Vector of vectors from given tree"</span>
+  (<span class="org-keyword">let</span> ((vector (make-array (length tree) <span class="org-builtin">:fill-pointer</span> 0)))
+    (<span class="org-keyword">loop</span> for el in tree do
+      (vector-push (<span class="org-keyword">if</span> (listp el)
+                       (apply #'vector el)
+                       el)
+                   vector))
+    vector))
+
+(<span class="org-keyword">defun</span> <span class="org-function-name">parse-input-file</span> (<span class="org-type">&amp;optional</span> (file #p<span class="org-string">"./simple-mesh-input"</span>))
+  (<span class="org-keyword">let</span> ((input (uiop:read-file-forms file)))
+    (make-problem <span class="org-builtin">:material</span> (apply #'make-material (getf input <span class="org-builtin">:material</span>))
+                  <span class="org-builtin">:nodes</span> (make-vector (getf input <span class="org-builtin">:nodes</span>))
+                  <span class="org-builtin">:elements</span> (make-vector (getf input <span class="org-builtin">:elements</span>))
+                  <span class="org-builtin">:constraints</span> (getf input <span class="org-builtin">:constraints</span>)
+                  <span class="org-builtin">:thickness</span> (getf input <span class="org-builtin">:thickness</span>)
+                  <span class="org-builtin">:loads</span> (getf input <span class="org-builtin">:loads</span>))))
+</pre>
+</div>
+
+<p>
+Lets also define simple utility function that abstract problem representation a little. Also <code>*problem*</code> global variable will be used to store the current problem. 
+</p>
+<div class="org-src-container">
+<pre class="src src-lisp">(<span class="org-keyword">defparameter</span> <span class="org-variable-name">*problem*</span> nil)
+
+(<span class="org-keyword">defun</span> <span class="org-function-name">node</span> (node-index)
+  (aref (problem-nodes *problem*) node-index))
+
+(<span class="org-keyword">defun</span> <span class="org-function-name">x</span> (node)
+  (aref node 0))
+
+(<span class="org-keyword">defun</span> <span class="org-function-name">y</span> (node)
+  (aref node 1))
+
+(<span class="org-keyword">defun</span> <span class="org-function-name">nodes-count</span> ()
+  (length (problem-nodes *problem*)))
+</pre>
+</div>
+
+<p>
+Let's test with sample input file 
+</p>
+<div class="org-src-container">
+<pre class="src src-lisp">(parse-input-file #p<span class="org-string">"./simple-mesh-input"</span>)
+</pre>
+</div>
+
+<pre class="example">
+#&lt;Nodes:4, Elements:2, Materials: #S(MATERIAL :E 2000 :NU 0.3), Constraints: 2, Loads: 2&gt;
+</pre>
+
+
+<div class="org-src-container">
+<pre class="src src-lisp">(<span class="org-keyword">let</span> ((p (parse-input-file #p<span class="org-string">"./simple-mesh-input"</span>)))
+  (print (problem-nodes p))
+  (print (problem-elements p))
+  (print (problem-constraints p))
+  (print (problem-loads p)))
+</pre>
+</div>
+
+<pre class="example">
+
+#(#(0 0) #(1 0) #(0 1) #(1 1)) 
+#(#(0 1 2) #(1 3 2)) 
+((0 :XY) (1 :Y)) 
+((2 (50 10)) (3 (0 10))) 
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orgba3f1aa" class="outline-2">
+<h2 id="orgba3f1aa"><span class="section-number-2">3</span> Elasticity Matrix</h2>
+<div class="outline-text-2" id="text-3">
+<p>
+Elasticity matrix converts strain to stress. We'll need this to define the stiffness matrix. 
+</p>
+
+<p>
+[&sigma;] = [D] [&epsilon;]
+</p>
+
+<p>
+[D] is expressed in terms of &nu; and E; ie the material properties. From mechanics we know the following relations: 
+</p>
+
+<p>
+\(\epsilon_x = \frac {\sigma_x} E - \nu \frac {\sigma_y} E\)
+</p>
+
+<p>
+\(\epsilon_y = - \nu \frac {\sigma_x} E + \frac {\sigma_y} E\)
+</p>
+
+<p>
+\(\gamma_{xy} = \frac {2 (1 + \nu)} E \tau_{xy}\)
+</p>
+
+<p>
+These relation can used to solve for &sigma; and expressed as:
+</p>
+
+\begin{equation}
+  [D] = \frac E {1- \nu^2}
+  \begin{bmatrix}
+    1 & \nu & 0 \\
+    \nu & 1 & 0 \\ 
+    0 & 0 & \frac{1-\nu} 2
+  \end{bmatrix}
+\end{equation}
+
+<div class="org-src-container">
+<pre class="src src-lisp">(<span class="org-keyword">defmethod</span> <span class="org-function-name">elasticity-matrix</span> ((material material))
+  (<span class="org-keyword">let*</span> ((nu (material-nu material))
+         (d* (make-array '(3 3) <span class="org-builtin">:initial-contents</span>
+                         `((1 ,nu 0)
+                           (,nu 1 0)
+                           (0 0 ,(/ (- 1 nu) 2)))))
+         (multiplier (/ (material-e material)
+                        (- 1 (expt nu 2)))))
+    (einsum (ij <span class="org-builtin">:to</span> ij)
+            <span class="org-builtin">:into</span> d* (* multiplier (ij d*)))))
+
+(<span class="org-keyword">defmethod</span> <span class="org-function-name">elasticity-matrix</span> ((p problem))
+  (elasticity-matrix (problem-material p)))
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orge863714" class="outline-2">
+<h2 id="orge863714"><span class="section-number-2">4</span> Element Stiffness Matrix</h2>
+<div class="outline-text-2" id="text-4">
+<p>
+The theme/idea of FEM is that we convert the problem of solving for a function (in our case deformation functions) in complex &amp; big domain, to simple domain (i.e. the elements). Our elements are triangle. And if we can solve the problem of finding deformations withing the triangle given the forces at the nodes, we can solve the big problem. 
+</p>
+
+<p>
+To solve for deformations resulting from loads, we need to find the gobal stiffness matrix which converts nodal displacement to external load. And inverting that matrix, we can solve for nodal displacements from given external load. However before that, we need the element stiffness matrix. It is an expression for nodal force as function of nodal displacement. 
+</p>
+
+<p>
+[F] = [k] [&delta;]
+</p>
+
+<p>
+To find this we will use virtual energy principle.
+</p>
+
+<p>
+If [&delta;]* is virtual displacement of nodes of an element, then
+</p>
+
+<p>
+External Virtual Work W* = [&delta;*]' [F]
+</p>
+
+<p>
+Internal Virtual Work W* = &int; [&epsilon;*]' [&sigma;] dV
+</p>
+
+<p>
+So, we need to find the strain induced due to virtual displacement and the stress induced due to applied loads. 
+</p>
+</div>
+
+<div id="outline-container-org1ba05ca" class="outline-3">
+<h3 id="org1ba05ca"><span class="section-number-3">4.1</span> Strain</h3>
+<div class="outline-text-3" id="text-4-1">
+<p>
+If any point inside the triangle at (x,y) is displaced to \(\vec{u}(x,y)\), then the strain at that position is given by 
+</p>
+
+<p>
+[&epsilon;] = [&epsilon;<sub>x</sub>; &epsilon;<sub>y</sub>; &gamma;<sub>xy</sub>]
+</p>
+
+<p>
+where,
+</p>
+
+<p>
+\(\vec{u}(x,y) = [ u(x,y) ; v(x,y)] = [u]\) is the vector function which gives deformation/displacement for each point in the domain, 
+</p>
+
+<p>
+\(\epsilon_x = \frac {\partial u(x,y)} {\partial x}\)
+</p>
+
+<p>
+\(\epsilon_y = \frac {\partial v(x,y)} {\partial y}\)
+</p>
+
+<p>
+\(\gamma_{xy} = \frac {\partial u(x,y)} {\partial y} + \frac {\partial v(x,y)} {\partial x}\)
+</p>
+
+<p>
+Now, we need to express \(\vec{u}(x,y)\) as a function of nodal displacements [&delta;], then carry out the derivatives to compute &epsilon; . 
+</p>
+
+<p>
+This is done by interpolating the nodal displacements to intermediate points. The interpolating function is called the shape function [N]. If we use linear interpolation, i.e. displacements at inner points of a triangluar element varies linearly then, 
+</p>
+
+<p>
+[u] = [N] [&delta;]
+</p>
+
+<p>
+and [&epsilon;] = [B] [&delta;]
+</p>
+
+<p>
+Function [N] is expressed as a matrix and it turns out to be a constant matrix if we do linear interpolation. Similarly, [B] is also a constant matrix. 
+</p>
+
+<p>
+Here, [&delta;] is a vector of nodal displacements. We express &delta; as (&delta;<sub>x1</sub>, &delta;<sub>y1</sub>, &delta;<sub>x2</sub>, &#x2026; ,&delta;<sub>y3</sub>). So, [N] is 2x6 matrix and [B] is 3x6 matrix. 
+</p>
+</div>
+</div>
+
+<div id="outline-container-org8e8b785" class="outline-3">
+<h3 id="org8e8b785"><span class="section-number-3">4.2</span> Internal Virtual Work</h3>
+<div class="outline-text-3" id="text-4-2">
+<p>
+Finally, we can express internal virtual works as: 
+</p>
+
+<p>
+W* = &int; [&epsilon;*]' [&sigma;] dV 
+</p>
+
+<p>
+= &int; ([B] [&delta;*])' ([D][&epsilon;]) dV
+</p>
+
+<p>
+= &int; [&delta;*]' [B]' [D] [B] [&delta;] dV 
+</p>
+
+<p>
+Equating to W* = [&delta;*]' [F]
+</p>
+
+<p>
+[F] = &int; [B]' [D] [B] dV [&delta;]
+</p>
+
+<p>
+so, the element stiffness matrix is 
+</p>
+
+<p>
+[k] = &int; [B]' [D] [B] dV  
+</p>
+
+<p>
+Since, [B] and [D] are constant. ([B] is constant for linear interpolation &amp; [D] is constant for homogeneous material) the integral is easily evaluated as: 
+</p>
+
+<p>
+[k] = [B]' [D] [B] * V 
+</p>
+
+<p>
+where V is total Volume of element; V = A * t 
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org5d3e03e" class="outline-2">
+<h2 id="org5d3e03e"><span class="section-number-2">5</span> Code For Element Stiffness Matrix</h2>
+<div class="outline-text-2" id="text-5">
+</div>
+<div id="outline-container-org248da8b" class="outline-3">
+<h3 id="org248da8b"><span class="section-number-3">5.1</span> Linear Interpolation Function</h3>
+<div class="outline-text-3" id="text-5-1">
+<p>
+Linear interpolation function [N] can easily be found by using a little bit of linear algebra. 
+</p>
+
+<p>
+Let the coordinates of the 3 nodes of triangular elements be \((x_1, y_1)\), \((x_2, y_2)\) &amp; \((x_3, y_3)\) and the corresponding deformation be \((u_1,v_1)\), \((u_2,v_2)\) &amp; \((u_3,v_3)\).
+</p>
+
+<p>
+Our linear function for x deformation is
+</p>
+
+<p>
+\(u(x,y)=a_u + b_u * x + c_u * y\)
+</p>
+
+<p>
+and we need to find the coefficients \(a_u\), \(b_u\) &amp; \(c_u\) such that the equation satifies the nodal displacements i.e.
+</p>
+
+<p>
+\(u(x_1,y_1) = u_1 = a_u + b_u * x_1 + c_u * y_1\) 
+</p>
+
+<p>
+Then matrix [C] defined as: 
+</p>
+
+\begin{equation*}
+  [C] = 
+  \begin{bmatrix}
+    1 & x_1 & y_1 \\
+    1 & x_2 & y_2 \\
+    1 & x_3 & y_3 \\ 
+  \end{bmatrix}
+\end{equation*}
+
+<p>
+Has the property that, 
+</p>
+\begin{equation*}
+  \begin{bmatrix}
+    a_{u} \\    b_u \\ c_u
+  \end{bmatrix}
+   = [C]^{-1}
+  \begin{bmatrix}
+    u_{1} \\     u_2 \\ u_3
+  \end{bmatrix}
+\end{equation*}
+
+<p>
+Thus, 
+</p>
+\begin{equation*}
+  u(x,y) =
+  \begin{bmatrix}
+    1 & x & y
+  \end{bmatrix}
+  [C]^{-1}
+  \begin{bmatrix}
+    u_1 \\ u_2 \\ u_3
+  \end{bmatrix}
+\end{equation*}
+
+<p>
+Thus,
+</p>
+
+<p>
+u(x,y) = [N*] [u<sub>1</sub>; u<sub>2</sub>; u<sub>3</sub>]
+</p>
+
+<p>
+v(x,y) = [N*] [v<sub>1</sub>; v<sub>2</sub>; v<sub>3</sub>]
+</p>
+
+<p>
+Assembling these expression we find the interpolation function and express it as matrix [N] and its derivative is the matrix [B].
+</p>
+
+\begin{equation*}
+  [N*]
+  = \begin{bmatrix} N_1 &  N_2 &  N_3 \end{bmatrix}
+  = \begin{bmatrix} 1 & x & y \end{bmatrix}
+     [C]^{-1}
+\end{equation*}
+
+<p>
+On differentiation, 
+</p>
+
+\begin{equation*}
+
+  [\epsilon] = 
+  \begin{bmatrix}
+    \frac{\partial N_1} {\partial x} & 0 & \frac{\partial N_2} {\partial x} & 0 & \frac{\partial N_3} {\partial x} & 0 \\
+    0 & \frac{\partial N_1} {\partial y} & 0 & \frac{\partial N_2} {\partial y} & 0 & \frac{\partial N_3} {\partial y} \\ 
+    \frac{\partial N_1} {\partial y} & \frac{\partial N_1} {\partial x} &
+    \frac{\partial N_2} {\partial y} & \frac{\partial N_2} {\partial x} & 
+    \frac{\partial N_3} {\partial y} & \frac{\partial N_3} {\partial x}  \\
+  \end{bmatrix} 
+  
+  \begin{bmatrix}
+    u_1 \\ v_1 \\
+    u_2 \\ v_2 \\
+    u_3 \\ v_3 \\ 
+  \end{bmatrix}
+  
+\end{equation*}
+
+<p>
+The first matrix in right hand side is matrix [B] and the second one is [&delta;]
+</p>
+
+<p>
+We can see from the expression for [N*] that, 
+</p>
+
+\begin{equation*}
+\frac{\partial N_i} {\partial x} = [C^{-1}]_{1,i} \\ 
+\frac{\partial N_i} {\partial j} = [C^{-1}]_{2,i} \\ 
+\end{equation*}
+
+<p>
+(indexing starts from 0)
+</p>
+
+<div class="org-src-container">
+<pre class="src src-lisp">(<span class="org-keyword">defun</span> <span class="org-function-name">c-matrix</span> (element)
+  (<span class="org-keyword">let</span> ((c (make-array '(3 3))))
+    (<span class="org-keyword">loop</span> for node-index across element
+          for node = (node node-index)
+          for x = (aref node 0)
+          for y = (aref node 1)
+          for j from 0 do
+            (setf (aref c j 0) 1
+                  (aref c j 1) x
+                  (aref c j 2) y))
+    c))
+
+(<span class="org-keyword">defun</span> <span class="org-function-name">B-matrix</span> (element)
+  (<span class="org-keyword">let*</span> ((c (c-matrix element))
+         (c-inv (invert c)))
+    (<span class="org-keyword">flet</span> ((delN/x (i x)
+             (<span class="org-keyword">case</span> x
+               (<span class="org-builtin">:x</span> (grid:aref c-inv 1 i))
+               (<span class="org-builtin">:y</span> (grid:aref c-inv 2 i)))))
+      (make-array '(3 6) <span class="org-builtin">:initial-contents</span>
+                  (list (list (delN/x 0 <span class="org-builtin">:x</span>) 0 (delN/x 1 <span class="org-builtin">:x</span>) 0 (delN/x 2 <span class="org-builtin">:x</span>) 0)
+                        (list 0 (delN/x 0 <span class="org-builtin">:y</span>) 0 (delN/x 1 <span class="org-builtin">:y</span>) 0 (delN/x 2 <span class="org-builtin">:y</span>))
+                        (list (delN/x 0 <span class="org-builtin">:y</span>) (delN/x 0 <span class="org-builtin">:x</span>)
+                              (delN/x 1 <span class="org-builtin">:y</span>) (delN/x 1 <span class="org-builtin">:x</span>)
+                              (delN/x 2 <span class="org-builtin">:y</span>) (delN/x 2 <span class="org-builtin">:x</span>)))))))
+
+(<span class="org-keyword">defun</span> <span class="org-function-name">interpolation-function</span> (element deflections)
+  (<span class="org-keyword">let*</span> ((c (c-matrix element))
+         (c-inv (invert c))
+         (u (make-array 3 <span class="org-builtin">:initial-contents</span> (list (aref deflections 0)
+                                                  (aref deflections 2)
+                                                  (aref deflections 4))))
+         (v (make-array 3 <span class="org-builtin">:initial-contents</span> (list (aref deflections 1)
+                                                  (aref deflections 3)
+                                                  (aref deflections 5))))
+         (c1 (einsum (ij <span class="org-builtin">:to</span> i)
+                     (* (ij c-inv) (j u))))
+         (c2 (einsum (ij <span class="org-builtin">:to</span> i)
+                     (* (ij c-inv) (j v)))))
+    (<span class="org-keyword">lambda</span> (x y)
+      (<span class="org-keyword">let</span> ((tmp (make-array 3 <span class="org-builtin">:initial-contents</span> (list 1 x y))))
+        (values (reduce #'+ (map 'vector #'* c1 tmp))
+                (reduce #'+ (map 'vector #'* c2 tmp)))))))
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orgeacc882" class="outline-3">
+<h3 id="orgeacc882"><span class="section-number-3">5.2</span> Element Stiffness Matrix</h3>
+<div class="outline-text-3" id="text-5-2">
+<div class="org-src-container">
+<pre class="src src-lisp">(<span class="org-keyword">defun</span> <span class="org-function-name">stiffness-matrix</span> (element)
+  (<span class="org-keyword">let*</span> ((b (b-matrix element))
+         (d (elasticity-matrix (problem-material *problem*)))
+         (c (c-matrix element))
+         (area (abs (* 1/2 (determinant c))))
+         (thickness (problem-thickness *problem*))
+         (db (matmul d b (* area thickness))))
+    <span class="org-comment-delimiter">;; </span><span class="org-comment">k = B' * (D * B) * det(C)/2 * thickness</span>
+    <span class="org-comment-delimiter">;; </span><span class="org-comment">B is 3x6 matrix, D is 3x3 matrix</span>
+    <span class="org-comment-delimiter">;; </span><span class="org-comment">so k is 6*6 matrix</span>
+    (matmul (transpose b) db)))
+</pre>
+</div>
+</div>
+</div>
+</div>
+<div id="outline-container-org1d8bdb3" class="outline-2">
+<h2 id="org1d8bdb3"><span class="section-number-2">6</span> Assembly of Global Stiffness Matrix</h2>
+<div class="outline-text-2" id="text-6">
+<p>
+Global Stiffness matrix is obtained by stiching together individual element stiffness matrix. First create a 2n by 2n global stiffness matrix, and then for each node of each element add the node's stiffness value to appropriate location in the global stiffness matrix.
+</p>
+
+<p>
+To apply the constraints, we modify the matrix's values at the rows and columns of constrained variable such that the solution will result constrainted value. E.g. if node 5's y direction is constrained, then row 5*2+1 = 11 and column 11 will have all entries 0 except the diagonal one. Numerically, this that means node 5's y value (deformation) will be zero, and also it won't affect other values. 
+</p>
+
+<div class="org-src-container">
+<pre class="src src-lisp">(<span class="org-keyword">defun</span> <span class="org-function-name">create-global-stiffness-matrix</span> ()
+  (<span class="org-keyword">let*</span> ((n (nodes-count))
+         (global-k (make-array (list (* 2 n) (* 2 n)) <span class="org-builtin">:initial-element</span> 0)))
+    (<span class="org-keyword">flet</span> ((add-k (i j xi xj value)
+             (incf (aref global-k
+                         (<span class="org-keyword">if</span> (eql xi <span class="org-builtin">:x</span>) (* 2 i) (1+ (* 2 i)))
+                         (<span class="org-keyword">if</span> (eql xj <span class="org-builtin">:x</span>) (* 2 j) (1+ (* 2 j))))
+                 value)))
+      (<span class="org-keyword">loop</span> for element across (problem-elements *problem*)
+            for k = (stiffness-matrix element) do
+
+              (<span class="org-keyword">loop</span> for i across element <span class="org-comment-delimiter">;; </span><span class="org-comment">global index of node</span>
+                    for i* from 0  <span class="org-comment-delimiter">;; </span><span class="org-comment">local index of node</span>
+                    do (<span class="org-keyword">loop</span> for j across element
+                             for j* from 0 do
+                               (add-k i j <span class="org-builtin">:x</span> <span class="org-builtin">:x</span> (grid:aref k (* 2 i*) (* 2 j*)))
+                               (add-k i j <span class="org-builtin">:x</span> <span class="org-builtin">:y</span> (grid:aref k (* 2 i*) (1+ (* 2 j*))))
+                               (add-k i j <span class="org-builtin">:y</span> <span class="org-builtin">:x</span> (grid:aref k (1+ (* 2 i*)) (* 2 j*)))
+                               (add-k i j <span class="org-builtin">:y</span> <span class="org-builtin">:y</span> (grid:aref k (1+ (* 2 i*)) (1+ (* 2 j*)))))))
+      global-k)))
+
+(<span class="org-keyword">defun</span> <span class="org-function-name">apply-constraints</span> (global-k)
+  <span class="org-comment-delimiter">;; </span><span class="org-comment">todo check that loads are not applied in constrained directions on nodes</span>
+  (<span class="org-keyword">let</span> ((n (length (problem-nodes *problem*))))
+    (<span class="org-keyword">flet</span> ((zero-out-row-and-col (diag)
+             (<span class="org-keyword">loop</span> for ij from 0 below (* 2 n) do
+               (<span class="org-keyword">if</span> (= ij diag)
+                   (setf (aref global-k ij ij) 1)
+                   (setf (aref global-k diag ij) 0
+                         (aref global-k ij diag) 0)))))
+
+      (<span class="org-keyword">loop</span> for constraint in (problem-constraints *problem*)
+            for (node type) = constraint do
+              (<span class="org-keyword">cond</span> ((eql type <span class="org-builtin">:x</span>)
+                     (zero-out-row-and-col (* 2 node)))
+                    ((eql type <span class="org-builtin">:y</span>)
+                     (zero-out-row-and-col (1+ (* 2 node))))
+                    ((eql type <span class="org-builtin">:xy</span>)
+                     (zero-out-row-and-col (* 2 node))
+                     (zero-out-row-and-col (1+ (* 2 node))))
+                    (t (<span class="org-warning">error</span> <span class="org-string">"Unknown constraint type ~a"</span> type))))
+      global-k)))
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org6526590" class="outline-2">
+<h2 id="org6526590"><span class="section-number-2">7</span> Solution</h2>
+<div class="outline-text-2" id="text-7">
+<p>
+Finally we can solve the problem.
+</p>
+
+<p>
+We create the global stiffness matrix, apply constraints, create load vector and solve the linear equation 
+</p>
+
+<p>
+[F] = [K] [&delta;]
+</p>
+
+<p>
+to obtain deformations [&delta;]
+</p>
+
+<div class="org-src-container">
+<pre class="src src-lisp">(<span class="org-keyword">defmacro</span> <span class="org-function-name">with-problem</span> ((problem) <span class="org-type">&amp;body</span> body)
+  `(<span class="org-keyword">let</span> ((*problem* ,problem))
+     ,@body))
+
+(<span class="org-keyword">defun</span> <span class="org-function-name">solve</span> (problem)
+  (<span class="org-keyword">with-problem</span> (problem)
+    (<span class="org-keyword">let*</span> ((K (apply-constraints (create-global-stiffness-matrix)))
+           (n (length (problem-nodes problem)))
+           (f (make-array (* 2 n) <span class="org-builtin">:initial-element</span> 0)))
+      (<span class="org-keyword">loop</span> for (node load) in  (problem-loads problem)
+            for (fx fy) = load do
+              (setf (aref f (* 2 node)) fx
+                    (aref f (1+ (* 2 node))) fy))
+      (solve-lineqn K f))))
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-lisp">(solve (parse-input-file #P<span class="org-string">"./simple-mesh-input"</span>))
+</pre>
+</div>
+
+<pre class="example">
+#m(0.000000000000000d0 0.000000000000000d0 0.008374999682922d0 0.000000000000000d0 0.087749999103394d0 0.021374999603577d0 0.073374999286194d0 -0.001374999896545d0)
+</pre>
+
+
+<p>
+This deformations seem plausible. The 0th node is fixed, as well as the y value of 1st node is 0. A bit of visualization will help. 
+</p>
+</div>
+</div>
+
+<div id="outline-container-orge39b5f2" class="outline-2">
+<h2 id="orge39b5f2"><span class="section-number-2">8</span> Visualization</h2>
+<div class="outline-text-2" id="text-8">
+<p>
+Lets define a mesh object for the visualizer to use. Later we'll use this struct for the mesh parser too.
+</p>
+<div class="org-src-container">
+<pre class="src src-lisp">(<span class="org-keyword">defstruct</span> <span class="org-type">mesh</span>
+  (nodes)
+  (elements))
+</pre>
+</div>
+
+<p>
+Using sdl, we can quickly write a simple graphics for visualizing the problem and solution. 
+</p>
+
+<div class="org-src-container">
+<pre class="src src-lisp">(ql:quickload <span class="org-builtin">:lispbuilder-sdl</span>)
+(<span class="org-keyword">in-package</span> <span class="org-comment-delimiter">#:</span><span class="org-doc">fem</span>)
+
+(<span class="org-keyword">defun</span> <span class="org-function-name">transform-node</span> (node)
+  (<span class="org-keyword">let</span> ((scale 600))
+    (sdl:point <span class="org-builtin">:x</span> (+ 100 (truncate (* scale (x node))))
+               <span class="org-builtin">:y</span> (- 650 (truncate (* scale (y node)))))))
+
+(<span class="org-keyword">defun</span> <span class="org-function-name">draw-mesh</span> (mesh)
+  (<span class="org-keyword">let</span> ((nodes (mesh-nodes mesh)))
+    (<span class="org-keyword">flet</span> ((element-nodes (e)
+             (list (aref nodes (aref e 0))
+                   (aref nodes (aref e 1))
+                   (aref nodes (aref e 2))))
+
+           (draw-line (node1 node2)
+             (sdl:draw-line (transform-node node1)
+                            (transform-node node2))))
+
+      (<span class="org-keyword">loop</span> for e across (mesh-elements mesh)
+            for nodes = (element-nodes e) do
+              (draw-line (first nodes) (second nodes))
+              (draw-line (second nodes) (third nodes))
+              (draw-line (third nodes) (first nodes))))))
+
+(<span class="org-keyword">defun</span> <span class="org-function-name">show-mesh</span> (mesh)
+  (<span class="org-keyword">sdl:with-init</span> ()
+    (sdl:window 1200 700 <span class="org-builtin">:resizable</span> t <span class="org-builtin">:title-caption</span> <span class="org-string">"Mesh Viewer"</span>)
+    (setf sdl:*default-color* sdl:*black*)
+    (sdl:initialise-default-font)
+
+    (sdl:clear-display sdl:*white*)
+    (draw-mesh mesh)
+    (sdl:update-display)
+    (<span class="org-keyword">sdl:with-events</span> ()
+      (<span class="org-builtin">:quit-event</span> () t)
+      (<span class="org-builtin">:key-down-event</span>
+       (<span class="org-builtin">:key</span> key)
+       (<span class="org-keyword">cond</span> ((eql key <span class="org-builtin">:sdl-key-q</span>)
+              (sdl:push-quit-event)))))))
+
+
+(<span class="org-keyword">defun</span> <span class="org-function-name">displaced-mesh</span> (mesh solution)
+  (<span class="org-keyword">let</span> ((newnodes (make-array (length (mesh-nodes mesh)))))
+    (<span class="org-keyword">loop</span> for n across (mesh-nodes mesh)
+          for i from 0 do
+            (setf (aref newnodes i)
+                  (vector (+ (aref n 0) (aref solution (* i 2)))
+                          (+ (aref n 1) (aref solution (1+ (* i 2)))))))
+    (make-mesh <span class="org-builtin">:nodes</span> newnodes
+               <span class="org-builtin">:elements</span> (mesh-elements mesh))))
+
+(<span class="org-keyword">defun</span> <span class="org-function-name">draw-solution</span> (mesh solution)
+  (<span class="org-keyword">let</span> ((sdl:*default-color* sdl:*red*))
+    (draw-mesh (displaced-mesh mesh solution))))
+
+(<span class="org-keyword">defun</span> <span class="org-function-name">show-solution</span> (mesh solution)
+  (<span class="org-keyword">sdl:with-init</span> ()
+    (sdl:window 1200 700 <span class="org-builtin">:resizable</span> t <span class="org-builtin">:title-caption</span> <span class="org-string">"Solution Viewer"</span>)
+    (setf sdl:*default-color* sdl:*black*)
+    (sdl:initialise-default-font)
+
+    (sdl:clear-display sdl:*white*)
+    (draw-mesh mesh)
+    (draw-solution mesh solution)
+    (sdl:update-display)
+    (<span class="org-keyword">sdl:with-events</span> ()
+      (<span class="org-builtin">:quit-event</span> () t)
+      (<span class="org-builtin">:key-down-event</span>
+       (<span class="org-builtin">:key</span> key)
+       (<span class="org-keyword">cond</span> ((eql key <span class="org-builtin">:sdl-key-q</span>)
+              (sdl:push-quit-event)))))))
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-lisp">(<span class="org-keyword">let</span> ((p (parse-input-file #p<span class="org-string">"./simple-mesh-input"</span>)))
+  (show-mesh (make-mesh <span class="org-builtin">:nodes</span> (problem-nodes p)
+                        <span class="org-builtin">:elements</span> (problem-elements p))))
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="./.data/mesh-simple.jpg" alt="mesh-simple.jpg" />
+</p>
+</div>
+
+<p>
+and its solution 
+</p>
+<div class="org-src-container">
+<pre class="src src-lisp">(<span class="org-keyword">defun</span> <span class="org-function-name">solve-and-show</span> (problem)
+  (<span class="org-keyword">let</span> ((solution (solve problem)))
+    (show-solution (make-mesh <span class="org-builtin">:nodes</span> (problem-nodes problem)
+                              <span class="org-builtin">:elements</span> (problem-elements problem))
+                   (grid:cl-array solution))))
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-lisp">(solve-and-show (parse-input-file #p<span class="org-string">"./simple-mesh-input"</span>))
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="./.data/mesh-simple-solution.jpg" alt="mesh-simple-solution.jpg" />
+</p>
+</div>
+
+<p>
+At node 2 (top left corner) a horizontal force of 50N (right) and vertical force of 10N (up) is applied, and at node 3 (top right corner) a vertical load of 10N (up) is applied. 
+</p>
+
+<p>
+The resulting displacements (exagerated) is visualised above. 
+</p>
+</div>
+</div>
+
+<div id="outline-container-org7858b6e" class="outline-2">
+<h2 id="org7858b6e"><span class="section-number-2">9</span> Complex Meshes</h2>
+<div class="outline-text-2" id="text-9">
+<p>
+We can use our custom input format for simple meshes only. For complex shapes, we need help of other software to generated mesh. <a href="https://gmsh.info/">gmsh</a> is a free and open software for meshing of 2D and 3D domain. It outputs a <code>.msh</code> file that we can import into our solver. 
+</p>
+
+<p>
+Using <code>gmsh</code>, I created a simple chair like mesh 
+<img src="./.data/mesh-huge.png" alt="mesh-huge.png" />
+</p>
+
+<p>
+Now, we need to write a parser of the <code>.msh</code> file. <code>.msh</code> is a text file will simple <a href="https://gmsh.info/doc/texinfo/gmsh.html#MSH-file-format">format</a>. 
+</p>
+</div>
+
+<div id="outline-container-orga3fbe26" class="outline-3">
+<h3 id="orga3fbe26"><span class="section-number-3">9.1</span> Parser</h3>
+<div class="outline-text-3" id="text-9-1">
+<div class="org-src-container">
+<pre class="src src-lisp">(<span class="org-keyword">in-package</span> <span class="org-comment-delimiter">#:</span><span class="org-doc">fem</span>)
+
+<span class="org-comment-delimiter">;; </span><span class="org-comment">https://gmsh.info/doc/texinfo/gmsh.html#MSH-file-format</span>
+
+(<span class="org-keyword">defparameter</span> <span class="org-variable-name">*mesh*</span> nil)
+(<span class="org-keyword">defparameter</span> <span class="org-variable-name">*mesh-type*</span> <span class="org-builtin">:3d</span>)
+
+(<span class="org-keyword">defstruct</span> <span class="org-type">mesh</span>
+  (nodes)
+  (elements))
+
+(<span class="org-keyword">defmethod</span> <span class="org-function-name">print-object</span> ((o mesh) stream)
+  (print-unreadable-object (o stream)
+    (format stream <span class="org-string">"Nodes:~a, Elements:~a"</span>
+            (length (mesh-nodes o))
+            (length (mesh-elements o)))))
+
+(<span class="org-keyword">defmacro</span> <span class="org-function-name">with-mesh-file</span> ((file) <span class="org-type">&amp;body</span> body)
+  `(<span class="org-keyword">with-open-file</span> (*mesh* ,file <span class="org-builtin">:direction</span> <span class="org-builtin">:input</span>)
+     ,@body))
+
+(<span class="org-keyword">defmacro</span> <span class="org-function-name">with-section</span> (name <span class="org-type">&amp;body</span> body)
+  `(<span class="org-keyword">let</span> ((,name (<span class="org-keyword">handler-case</span> (read-section-name)
+                  (end-of-file (e)
+                    (<span class="org-keyword">declare</span> (ignore e))
+                    nil))))
+     ,@body))
+
+(<span class="org-keyword">defun</span> <span class="org-function-name">whitespace-charp</span> (char)
+  (or (char= char #\Space)
+      (char= char #\Newline)
+      (char= char #\Return)))
+
+(<span class="org-keyword">defun</span> <span class="org-function-name">read-nowhitespace-char</span> ()
+  (<span class="org-keyword">let</span> ((char (read-char *mesh*)))
+    (<span class="org-keyword">if</span> (whitespace-charp char)
+        (read-nowhitespace-char)
+        char)))
+
+(<span class="org-keyword">defun</span> <span class="org-function-name">read-string</span> ()
+  (<span class="org-keyword">with-output-to-string</span> (str)
+    (<span class="org-keyword">loop</span> for char = (read-char *mesh* nil nil) do
+      (<span class="org-keyword">if</span> (or (null char)
+              (whitespace-charp char))
+          (<span class="org-keyword">return</span>)
+          (write-char char str)))))
+
+(<span class="org-keyword">defun</span> <span class="org-function-name">read-section-name</span> ()
+  (<span class="org-keyword">let</span> (($ (read-nowhitespace-char)))
+    (<span class="org-keyword">unless</span> (char= $ #\$)
+      (<span class="org-warning">error</span> <span class="org-string">"not at start of section"</span>))
+    (read-string)))
+
+(<span class="org-keyword">defun</span> <span class="org-function-name">skip-section</span> (name)
+  (<span class="org-keyword">loop</span> with end-marker = (format nil <span class="org-string">"$End~a"</span> name)
+        for line = (read-line *mesh*) do
+          (<span class="org-keyword">when</span> (string= line end-marker)
+              (<span class="org-keyword">return</span>))))
+
+(<span class="org-keyword">defun</span> <span class="org-function-name">end-section</span> (name)
+  (<span class="org-keyword">let</span> ((end-marker (format nil <span class="org-string">"$End~a"</span> name))
+        (line (read-line *mesh*)))
+    (<span class="org-keyword">cond</span> ((every #'whitespace-charp line)
+           (end-section name))
+          ((string= line end-marker)
+           t)
+          (t
+           (<span class="org-warning">error</span> <span class="org-string">"Section ~a doesn't end at ~a"</span> name line)))))
+
+
+(<span class="org-keyword">defun</span> <span class="org-function-name">read-integer</span> ()
+  <span class="org-comment-delimiter">;; </span><span class="org-comment">TODO: implement checks for integer</span>
+  (read *mesh*))
+
+(<span class="org-keyword">defun</span> <span class="org-function-name">read-number</span> ()
+  <span class="org-comment-delimiter">;; </span><span class="org-comment">reads integers or double floats</span>
+  <span class="org-comment-delimiter">;; </span><span class="org-comment">TODO: same as above</span>
+  (read *mesh*))
+
+(<span class="org-keyword">defmacro</span> <span class="org-function-name">with-integers</span> (names <span class="org-type">&amp;body</span> body)
+  `(<span class="org-keyword">let</span> (,@(<span class="org-keyword">loop</span> for n in names
+                 collect `(,n (read-integer))))
+     ,@body))
+
+(<span class="org-keyword">defun</span> <span class="org-function-name">read-triangle</span> ()
+  (vector (read-integer) (read-integer) (read-integer)))
+
+(<span class="org-keyword">defun</span> <span class="org-function-name">read-node</span> ()
+  (<span class="org-keyword">ecase</span> *mesh-type*
+    (<span class="org-builtin">:3d</span> (vector (read-number) (read-number) (read-number)))
+    (<span class="org-builtin">:2d</span> (<span class="org-keyword">prog1</span> (vector (read-number) (read-number))
+           (read-number)))))
+
+<span class="org-comment-delimiter">;; </span><span class="org-comment">$Nodes</span>
+<span class="org-comment-delimiter">;;   </span><span class="org-comment">numEntityBlocks(size_t) numNodes(size_t)</span>
+<span class="org-comment-delimiter">;;     </span><span class="org-comment">minNodeTag(size_t) maxNodeTag(size_t)</span>
+<span class="org-comment-delimiter">;;   </span><span class="org-comment">entityDim(int) entityTag(int) parametric(int; 0 or 1)</span>
+<span class="org-comment-delimiter">;;     </span><span class="org-comment">numNodesInBlock(size_t)</span>
+<span class="org-comment-delimiter">;;     </span><span class="org-comment">nodeTag(size_t)</span>
+<span class="org-comment-delimiter">;;     </span><span class="org-comment">...</span>
+<span class="org-comment-delimiter">;;     </span><span class="org-comment">x(double) y(double) z(double)</span>
+<span class="org-comment-delimiter">;;        </span><span class="org-comment">&lt; u(double; if parametric and entityDim &gt;= 1) &gt;</span>
+<span class="org-comment-delimiter">;;        </span><span class="org-comment">&lt; v(double; if parametric and entityDim &gt;= 2) &gt;</span>
+<span class="org-comment-delimiter">;;        </span><span class="org-comment">&lt; w(double; if parametric and entityDim == 3) &gt;</span>
+<span class="org-comment-delimiter">;;     </span><span class="org-comment">...</span>
+<span class="org-comment-delimiter">;;   </span><span class="org-comment">...</span>
+<span class="org-comment-delimiter">;; </span><span class="org-comment">$EndNodes</span>
+
+(<span class="org-keyword">defun</span> <span class="org-function-name">read-nodes</span> ()
+  (<span class="org-keyword">with-integers</span> (num-blocks num-nodes node-min node-max)
+    (<span class="org-keyword">declare</span> (ignore num-nodes node-min))
+    (<span class="org-keyword">let</span> ((nodes (make-array (1+ node-max) <span class="org-builtin">:initial-element</span> nil)))
+      (<span class="org-keyword">loop</span> repeat num-blocks do
+        (<span class="org-keyword">with-integers</span> (entity-dim entity-tag parametric num-nodes-in-block)
+          (<span class="org-keyword">declare</span> (ignore entity-dim entity-tag))
+          (<span class="org-warning">assert</span> (= parametric 0))
+          (<span class="org-keyword">let</span> ((block-nodes (make-array num-nodes-in-block <span class="org-builtin">:fill-pointer</span> 0)))
+            <span class="org-comment-delimiter">;; </span><span class="org-comment">read block numbers</span>
+            (<span class="org-keyword">loop</span> repeat num-nodes-in-block do
+              (vector-push (read-integer) block-nodes))
+            (<span class="org-keyword">loop</span> for node-number across block-nodes do
+              (setf (aref nodes node-number) (read-node))))))
+      (end-section <span class="org-string">"Nodes"</span>)
+      nodes)))
+
+
+<span class="org-comment-delimiter">;; </span><span class="org-comment">$Elements</span>
+<span class="org-comment-delimiter">;;   </span><span class="org-comment">numEntityBlocks(size_t) numElements(size_t)</span>
+<span class="org-comment-delimiter">;;     </span><span class="org-comment">minElementTag(size_t) maxElementTag(size_t)</span>
+<span class="org-comment-delimiter">;;   </span><span class="org-comment">entityDim(int) entityTag(int) elementType(int; see below)</span>
+<span class="org-comment-delimiter">;;     </span><span class="org-comment">numElementsInBlock(size_t)</span>
+<span class="org-comment-delimiter">;;     </span><span class="org-comment">elementTag(size_t) nodeTag(size_t) ...</span>
+<span class="org-comment-delimiter">;;     </span><span class="org-comment">...</span>
+<span class="org-comment-delimiter">;;   </span><span class="org-comment">...</span>
+<span class="org-comment-delimiter">;; </span><span class="org-comment">$EndElements</span>
+(<span class="org-keyword">defun</span> <span class="org-function-name">read-elements</span> ()
+  (<span class="org-keyword">with-integers</span> (num-blocks num-elements element-min element-max)
+    (<span class="org-keyword">declare</span> (ignore element-min element-max))
+    (<span class="org-keyword">let</span> ((elements (make-array num-elements <span class="org-builtin">:fill-pointer</span> 0)))
+      (<span class="org-keyword">loop</span> repeat num-blocks do
+        (<span class="org-keyword">with-integers</span> (entity-dim entity-tag element-type num-elements)
+          <span class="org-comment-delimiter">;;</span><span class="org-comment">(declare (ignore entity-dim entity-tag))</span>
+          (<span class="org-keyword">case</span> element-type
+            (15 <span class="org-comment-delimiter">;; </span><span class="org-comment">one node point</span>
+             (<span class="org-keyword">loop</span> repeat num-elements do (read-integer) (read-integer)))
+            (1 <span class="org-comment-delimiter">;; </span><span class="org-comment">2 node line</span>
+             (<span class="org-keyword">loop</span> repeat num-elements do (read-integer) (read-integer) (read-integer)))
+            (2 <span class="org-comment-delimiter">;; </span><span class="org-comment">3 node triangle</span>
+             (<span class="org-keyword">loop</span> repeat num-elements do
+               (read-number) <span class="org-comment-delimiter">;; </span><span class="org-comment">ignore element-number</span>
+               (vector-push (read-triangle) elements)))
+            (t
+             (print (list entity-dim entity-tag num-elements))
+             (<span class="org-warning">error</span> <span class="org-string">"Can't handle element-type ~a"</span> element-type)))))
+      (end-section <span class="org-string">"Elements"</span>)
+      elements)))
+
+(<span class="org-keyword">defun</span> <span class="org-function-name">cleanup-mesh</span> (mesh)
+  <span class="org-doc">"Remove missing ids; and remove nodes that don't belong to any element"</span>
+  (<span class="org-keyword">with-slots</span> (nodes elements) mesh
+    (<span class="org-keyword">let</span> ((cnodes (make-array (length nodes) <span class="org-builtin">:fill-pointer</span> 0))
+          (celements (make-array (length elements) <span class="org-builtin">:fill-pointer</span> 0))
+          (bitmap (make-array (length nodes) <span class="org-builtin">:element-type</span> 'bit <span class="org-builtin">:initial-element</span> 0)))
+      (<span class="org-keyword">loop</span> for e across elements do
+            (map 'nil (<span class="org-keyword">lambda</span> (n)
+                        (setf (aref bitmap n) 1))
+                 e))
+      (<span class="org-keyword">loop</span> for bit across bitmap
+            for i from 0 do
+            (<span class="org-keyword">when</span> (= bit 0)
+              (setf (aref nodes i) nil)))
+
+      (<span class="org-keyword">loop</span> for n across nodes
+            for i* from 0
+            with i = 0 do
+              (<span class="org-keyword">when</span> n
+                (vector-push n cnodes)
+                (setf (aref nodes i*) i)
+                (incf i)))
+
+      (<span class="org-keyword">loop</span> for e across elements do
+        (vector-push (map 'vector (<span class="org-keyword">lambda</span> (node-i)
+                                    (aref nodes node-i))
+                          e)
+                     celements))
+      (make-mesh <span class="org-builtin">:nodes</span> cnodes
+                 <span class="org-builtin">:elements</span> celements))))
+
+(<span class="org-keyword">defun</span> <span class="org-function-name">read-mesh</span> (file)
+  (<span class="org-keyword">declare</span> (optimize (debug 3)))
+  (<span class="org-keyword">with-mesh-file</span> (file)
+    (<span class="org-keyword">let</span> (nodes elements)
+      (<span class="org-keyword">loop</span> do
+        (<span class="org-keyword">with-section</span> name
+          (<span class="org-keyword">cond</span> ((eql name nil)
+                 (<span class="org-keyword">return</span>))
+                ((string= name <span class="org-string">"Nodes"</span>)
+                 (setf nodes (read-nodes)))
+                ((string= name <span class="org-string">"Elements"</span>)
+                 (setf elements (read-elements)))
+                (t (skip-section name)))))
+      (cleanup-mesh (make-mesh <span class="org-builtin">:nodes</span> nodes
+                               <span class="org-builtin">:elements</span> elements)))))
+
+(<span class="org-keyword">defun</span> <span class="org-function-name">read-2d-mesh</span> (file)
+  (<span class="org-keyword">let</span> ((*mesh-type* <span class="org-builtin">:2d</span>))
+    (read-mesh file)))
+</pre>
+</div>
+
+
+<p>
+Lets check the mesh:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-lisp">(show-mesh (read-2d-mesh #p<span class="org-string">"./chairlike.msh"</span>))
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="./.data/chairlike-mesh.jpg" alt="chairlike-mesh.jpg" />
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org525a373" class="outline-3">
+<h3 id="org525a373"><span class="section-number-3">9.2</span> Solution</h3>
+<div class="outline-text-3" id="text-9-2">
+<p>
+Once we have the mesh we can setup the constraints and load, and solve the problem.
+</p>
+
+<ul class="org-ul">
+<li>The material properties are set as of steel.</li>
+<li>Nodes and elements are read from the file using the parser we just wrote above.</li>
+<li>Thickness (in Z-direction) is 10cm.</li>
+<li>All bottom nodes (with y-coordinate = 0) are constrained in x &amp; y direction.</li>
+<li>Load is applied in horizontal direction (left) at the top nodes near coordinate (0.01,0.99). Total load is 0.1N distributed among 131 nodes that fall in the region of distance &lt; sqrt(0.01) from (0.01,0.99).</li>
+</ul>
+
+<div class="org-src-container">
+<pre class="src src-lisp">(<span class="org-keyword">defun</span> <span class="org-function-name">mesh-problem</span> ()
+  (<span class="org-keyword">flet</span> ((dist (node x y)
+           (+ (expt (- (x node) x) 2)
+              (expt (- (y node) y) 2))))
+    (<span class="org-keyword">let</span> ((mesh (read-2d-mesh #p<span class="org-string">"~/untitled.msh"</span>)))
+      (make-problem <span class="org-builtin">:material</span> (make-material <span class="org-builtin">:e</span> 2000
+                                             <span class="org-builtin">:nu</span> 0.3)
+                    <span class="org-builtin">:nodes</span> (mesh-nodes mesh)
+                    <span class="org-builtin">:elements</span> (mesh-elements mesh)
+                    <span class="org-builtin">:thickness</span> 0.1
+                    <span class="org-builtin">:constraints</span>
+                    <span class="org-comment-delimiter">;; </span><span class="org-comment">all bottom nodes are fixed</span>
+                    (<span class="org-keyword">loop</span> for n across (mesh-nodes mesh)
+                          for index from 0
+                          when (and n (= (y n) 0))
+                            collect (list index <span class="org-builtin">:xy</span>))
+                    <span class="org-builtin">:loads</span>
+                    <span class="org-comment-delimiter">;; </span><span class="org-comment">nodes near the top have a slight left direction load</span>
+                    (<span class="org-keyword">loop</span> for n across (mesh-nodes mesh)
+                          for index from 0
+                          when (and n (&lt; (dist n 0.01 0.99) 0.01))
+                            collect (list index (list (/ -.1 131) 0)))))))
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-lisp">(mesh-problem #p<span class="org-string">"./chairlike.msh"</span>)
+</pre>
+</div>
+
+<p>
+Now we can give the problem to the solver and visualize it. 
+</p>
+<div class="org-src-container">
+<pre class="src src-lisp">(solve-and-show (mesh-problem #p<span class="org-string">"./chairlike.msh"</span>))
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="./.data/chairlike-mesh-solution.png" alt="chairlike-mesh-solution.png" />
+</p>
+</div>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orgede63da" class="outline-2">
+<h2 id="orgede63da"><span class="section-number-2">10</span> Utilities</h2>
+<div class="outline-text-2" id="text-10">
+</div>
+<div id="outline-container-org2e67e1a" class="outline-3">
+<h3 id="org2e67e1a"><span class="section-number-3">10.1</span> Linear Algebra - Pure Common Lisp</h3>
+<div class="outline-text-3" id="text-10-1">
+<p>
+These naive implementation of Linear Algebra functions are feasible only for very small meshes. I wrote these during rapid prototyping. 
+</p>
+<div class="org-src-container">
+<pre class="src src-lisp">(<span class="org-keyword">in-package</span> <span class="org-comment-delimiter">#:</span><span class="org-doc">fem</span>)
+
+(<span class="org-keyword">defun</span> <span class="org-function-name">minor</span> (matrix i j)
+  (<span class="org-keyword">let*</span> ((n (array-dimension matrix 0))
+         (minor (make-array (list (1- n) (1- n)))))
+    (<span class="org-keyword">loop</span> for i* from 0 below (1- n) do
+      (<span class="org-keyword">loop</span> for j* from 0 below (1- n) do
+        (setf (aref minor i* j*)
+              (aref matrix
+                    (<span class="org-keyword">if</span> (&lt; i* i) i* (1+ i*))
+                    (<span class="org-keyword">if</span> (&lt; j* j) j* (1+ j*))))))
+    minor))
+
+(<span class="org-keyword">defun</span> <span class="org-function-name">determinant</span> (matrix)
+  (<span class="org-keyword">let</span> ((n (array-dimension matrix 0)))
+    (<span class="org-keyword">cond</span> ((= n 0) (<span class="org-warning">error</span> <span class="org-string">"No Determinant of a zero dimensional matrix"</span>))
+          ((= n 1) (aref matrix 0 0))
+          ((= n 2 (- (* (aref matrix 0 0) (aref matrix 1 1))
+                     (* (aref matrix 0 1) (aref matrix 1 0)))))
+          (t
+           (<span class="org-keyword">loop</span> for j from 0 below n
+                 summing (* (aref matrix 0 j)
+                            (expt -1 j)
+                            (determinant (minor matrix 0 j))))))))
+
+(<span class="org-keyword">defun</span> <span class="org-function-name">adjoint</span> (matrix)
+  (<span class="org-keyword">let*</span> ((n (array-dimension matrix 0))
+         (adjoint (make-array (list n n))))
+    (<span class="org-keyword">loop</span> for i from 0 below n do
+      (<span class="org-keyword">loop</span> for j from 0 below n do
+        (setf (aref adjoint i j)
+              (* (expt -1 (+ i j))
+                 (determinant (minor matrix i j))))))
+    adjoint))
+
+(<span class="org-keyword">defun</span> <span class="org-function-name">invert</span> (matrix)
+  (<span class="org-keyword">let</span> ((det (determinant matrix)))
+    (<span class="org-keyword">when</span> (= det 0)
+      (<span class="org-warning">error</span> <span class="org-string">"Determinant of matrix is zero; can't invert"</span>))
+    (<span class="org-keyword">let</span> ((adj (adjoint matrix)))
+      (einsum (ij <span class="org-builtin">:to</span> ij)
+              (/ (ji adj) det)))))
+
+(<span class="org-keyword">defun</span> <span class="org-function-name">matmul</span> (m1 m2 <span class="org-type">&amp;optional</span> (alpha 1))
+  (<span class="org-keyword">cond</span> ((vectorp m2)
+         (einsum (ij <span class="org-builtin">:to</span> i)
+                 (* (ij m1) (j m2) alpha)))
+        (t
+         (einsum (ijk <span class="org-builtin">:to</span> ik)
+                 (* (ij m1) (jk m2) alpha)))))
+
+(<span class="org-keyword">defun</span> <span class="org-function-name">solve-lineq</span> (A b)
+  <span class="org-doc">"Solves A x = b"</span>
+  (matmul (invert A) b))
+
+(<span class="org-keyword">defun</span> <span class="org-function-name">transpose</span> (m1)
+  (einsum (ij <span class="org-builtin">:to</span> ij)
+          (ji m1)))
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orge2f8f93" class="outline-3">
+<h3 id="orge2f8f93"><span class="section-number-3">10.2</span> Linear Algebra - GSL (GNU Scientific Library)</h3>
+<div class="outline-text-3" id="text-10-2">
+<p>
+For big meshes, we'll need to use routines provided by GSL Library. Actually I should have used sparse matrix representaion and corresponding alogrithms, but lets keep that for another day. 
+</p>
+
+<div class="org-src-container">
+<pre class="src src-lisp">(ql:quickload <span class="org-builtin">:gsll</span>)
+(<span class="org-keyword">in-package</span> <span class="org-comment-delimiter">#:</span><span class="org-doc">fem</span>)
+
+(<span class="org-keyword">defun</span> <span class="org-function-name">make-gsll-matrix</span> (lisp-array)
+  (<span class="org-keyword">cond</span> ((typep  lisp-array 'grid:foreign-array)
+         lisp-array)
+        ((= (array-rank lisp-array) 2)
+         (<span class="org-keyword">let</span> ((matrix (make-instance 'grid:matrix-double-float
+                                      <span class="org-builtin">:element-type</span> 'double-float
+                                      <span class="org-builtin">:dimensions</span> (array-dimensions lisp-array))))
+           (<span class="org-keyword">loop</span> for i from 0 below (array-dimension lisp-array 0) do
+             (<span class="org-keyword">loop</span> for j from 0 below (array-dimension lisp-array 1) do
+               (setf (grid:aref matrix i j) (coerce (aref lisp-array i j) 'double-float))))
+           matrix))
+        ((= (array-rank lisp-array) 1)
+         (<span class="org-keyword">let</span> ((matrix (make-instance 'grid:vector-double-float
+                                      <span class="org-builtin">:element-type</span> 'double-float
+                                      <span class="org-builtin">:dimensions</span> (array-dimensions lisp-array))))
+           (<span class="org-keyword">loop</span> for i from 0 below (length lisp-array) do
+             (setf (grid:aref matrix i) (coerce (aref lisp-array i) 'double-float)))
+           matrix))
+        (t (<span class="org-warning">error</span> <span class="org-string">"Con't covert to gsll array"</span>))))
+
+(<span class="org-keyword">defun</span> <span class="org-function-name">determinant</span> (matrix)
+  (<span class="org-keyword">multiple-value-bind</span> (lu perm signum)
+      (gsll:lu-decomposition (make-gsll-matrix matrix))
+    (<span class="org-keyword">declare</span> (ignore perm))
+    (gsll:lu-determinant lu signum)))
+
+(<span class="org-keyword">defun</span> <span class="org-function-name">invert</span> (matrix)
+  (<span class="org-keyword">multiple-value-bind</span> (lu perm signum)
+      (gsll:lu-decomposition (make-gsll-matrix matrix))
+    (<span class="org-keyword">declare</span> (ignore signum))
+    (gsll:lu-invert lu perm)))
+
+(<span class="org-keyword">defun</span> <span class="org-function-name">matmul</span> (m1 m2 <span class="org-type">&amp;optional</span> alpha)
+  <span class="org-doc">"m1*m2 * alpha; alpha is scalar"</span>
+  (<span class="org-keyword">if</span> alpha
+      (gsll:matrix-product (make-gsll-matrix m1) (make-gsll-matrix m2) nil alpha)
+      (gsll:matrix-product (make-gsll-matrix m1) (make-gsll-matrix m2))))
+
+(<span class="org-keyword">defun</span> <span class="org-function-name">solve-lineqn</span> (A b)
+  <span class="org-doc">"Solves A x = b"</span>
+  (<span class="org-keyword">multiple-value-bind</span> (lu perm signum)
+      (gsll:lu-decomposition (make-gsll-matrix A))
+    (<span class="org-keyword">declare</span> (ignore signum))
+    (gsll:lu-solve lu
+                   (make-gsll-matrix b)
+                   perm
+                   t)))
+
+(<span class="org-keyword">defun</span> <span class="org-function-name">transpose</span> (m1)
+  (einsum (ij <span class="org-builtin">:to</span> ij)
+          (ji m1)))
+</pre>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+<p class="author">Author: Bibek Panthi</p>
+<p class="date">Created: 2021-06-27 Sun 13:53</p>
+<p class="validation"><a href="https://validator.w3.org/check?uri=referer">Validate</a></p>
+</div>
+</body>
+</html>

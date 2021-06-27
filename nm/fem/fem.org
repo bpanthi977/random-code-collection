@@ -1,4 +1,6 @@
 #+PROPERTY: header-args :tangle yes
+#+TITLE: Finite Element Method - Solid Mechanics
+#+AUTHOR: Bibek Panthi
 
 My objective is to use FEM (Finite Element Method) to solve solid mechanics problem of finding body deformation from applied external loads (forces). I followed this excellent article [[https://podgorskiy.com/spblog/304/writing-a-fem-solver-in-less-the-180-lines-of-code][Writing a FEM Solve in less than 180 lines of code]] and rewrote the solver program in Common Lisp. Aditionally, I wrote a few lines for visualizing the problem and solution and also  a mesh file parser to input a complex mesh from ~gmsh~ program.
 
