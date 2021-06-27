@@ -1,0 +1,24 @@
+;; all units are SI except E which is in MPa
+
+:material
+(:nu .3 :E 2000) ;; poission ratio and Modulus of Elasticity
+
+:thickness 1 
+
+:nodes    ;; coordinates of nodes
+((0 0)
+ (1 0)
+ (0 1)
+ (1 1))
+
+:elements  ;; trangles are set of 3 nodes; anticlockwise order (a convention we'll use)
+((0 1 2)
+ (1 3 2))
+
+:constraints ;; displacement constraints
+((0 :xy)     ;; 0th node is fixed in x & y dir 
+ (1 :y))     ;; 1th node is fixed in y dir 
+
+:loads       ;; forces at nodal points 
+((2 (50 10))
+ (3 (0 10)))
