@@ -1,0 +1,90 @@
+#!/bin/sh
+#|-*- mode:lisp -*-|#
+#|
+exec ros -Q -- $0 "$@"
+|#
+(progn ;;init forms
+  (ros:ensure-asdf)
+  #+quicklisp(ql:quickload '(osicat) :silent t)
+  )
+
+(defpackage :ros.script.relativize-links.3834316326
+  (:use :cl))
+(in-package :ros.script.relativize-links.3834316326)
+
+(defun relative-pathname (from to)
+  "Relative pathname `from' to `to'.
+Note: directories of `from' and `to' must exist, since `truename' is used to compute the relative pathnames"
+  (let ((to-directory (pathname-directory (truename (uiop:pathname-directory-pathname to))))
+        (from-directory (pathname-directory (truename (uiop:pathname-directory-pathname from)))))
+
+    (loop for (dt . tailt) on to-directory
+          for (df . tailf) on from-directory
+          while (or (eql dt df)
+                    (string= dt df))
+          finally
+             (return (make-pathname :defaults to
+                                    :directory `(:relative ,@(make-list (1+ (length tailf)) :initial-element :up)
+                                                           ,dt ,@tailt))))))
+(defun create-relative-link (link target)
+  (osicat:make-link link :target (namestring (relative-pathname link target))))  
+
+(define-condition broken-link ()
+  ((link :initarg :link)
+   (target :initarg :target)))
+
+(defun relativize-link (link)
+  (restart-case 
+      (let ((target (osicat:read-link link)))
+        (unless (uiop:relative-pathname-p target)
+          (cond ((probe-file target)
+                 (format t "~&changing ~a" link)
+                 (delete-file link)
+                 (create-relative-link link target))
+                (t 
+                 (error (make-condition 'broken-link :link link :target target))))))
+
+    (skip ()
+      nil)))
+
+(defun directory-contents (dir)
+  (directory (merge-pathnames uiop:*wild-file-for-directory* dir)
+             :resolve-symlinks nil))
+
+(defun walk-directory (dir fn)
+  "Walks over non-symbolic directories; and applies fn to symbolic files & directories"
+  (flet ((symbolic-file? (path)
+           (eql (osicat:file-kind path) :symbolic-link))
+
+         (dir-as-file (dir)
+           (let ((namestring (namestring dir)))
+             (pathname (subseq namestring 
+                               0 (1- (length namestring)))))))
+    
+    (loop for c in (directory-contents dir) do
+      (if (uiop:directory-pathname-p c)
+          (let ((path (dir-as-file c)))
+            (if (symbolic-file? path)
+                (funcall fn path)
+                (walk-directory c fn)))
+          (when (symbolic-file? c)
+            (funcall fn c))))))
+
+(defun main% (&optional (dir (osicat:current-directory)))
+  "Convert all links within this directory to relative links; if the links are valid"
+  (handler-bind  ((broken-link (lambda (e)
+                                 (format t "~&Broken link (~a) to ~a; skipping"
+                                         (slot-value e 'link) (slot-value e 'target))
+                                 (invoke-restart 'skip))))
+    (walk-directory dir #'relativize-link)))
+                     
+(defun main (&rest argv)
+  (declare (ignorable argv))
+  (if argv 
+      (let ((path (merge-pathnames (first argv) (osicat:current-directory))))
+        (handler-case (setf path (truename path))
+          (file-error ()
+            (format t "~&Path doesn't exist ~a~%" path)))
+        (main% path))
+      (format t "~&Provide a directory to process~%")))
+;;; vim: set ft=lisp lisp:
