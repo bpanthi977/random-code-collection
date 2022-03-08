@@ -39,7 +39,7 @@ Host also provide input
    :PROPERTIES:
    :time:     0:14:49
    :END:
- the bytes in buffers are of some types and they can be multipel so they are collection array of data of some type. 
+ the bytes in buffers are of some types and they can be multiple so they are collection array of data of some type. 
  We abstract buffers with gpu-arrays. 
 
 ** Texture is a data structure that holds Images
@@ -85,9 +85,8 @@ Host also provide input
 * Rendering Pipeline
   :PROPERTIES:
   :time:     0:56:23
-  :DIR:      /home/bpanthi/lisp/rcc/gl/.data/
   :END:
-[[attachment:mpv-screenshotBLKh78.png]]
+[[file:.data/mpv-screenshotBLKh78.png]]
 
 From the buffer stream  of vertices, for each vertex the code in vertex shader is called. Then the data moves forward. 
 + Tessellation (optional) (added in GL4) : subdivides triangles into new triangles

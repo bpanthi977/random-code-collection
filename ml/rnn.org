@@ -153,7 +153,7 @@ Here’s an actual training example from the text (with corresponding index of t
 Let’s get concrete and see what the RNN for our language model looks like. The input x will be a sequence of words (just like the example printed above) and each x_t is a single word. But there’s one more thing: Because of how matrix multiplication works we can’t simply use a word index (like 36) as an input. Instead, we represent each word as a one-hot vector of size vocabulary-size. For example, the word with index 36 would be the vector of all 0’s and a 1 at position 36. So, each x_t will become a vector, and x will be a matrix, with each row representing a word. We’ll perform this transformation in our Neural Network code instead of doing it in the pre-processing. The output/predictions of our network p has a similar format. Each p_t is a vector of vocabulary-size elements, and each element represents the probability of that word being the next word in the sentence.
 
 #+CAPTION: RNN (copied from the tutorial; (In this document o_t is replaced with p_t))
-[[attachment:20201117170127-rnn.png]]
+[[file:.data/20201117170127-rnn.png]]
 
 
 $s_t = \tanh (Ux_t + Ws_{t-1})$

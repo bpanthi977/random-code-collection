@@ -1,4 +1,4 @@
-;;(ql:quickload '(:cepl.sdl2 :nineveh))
+;;(ql:quickload '(:cepl.sdl2 :nineveh :livesupport))
 (defpackage #:cepl-package 
   (:use #:cl 
 	#:cepl
