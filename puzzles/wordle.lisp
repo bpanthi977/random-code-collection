@@ -96,8 +96,8 @@ represented as a number for 0 to 3^5 in base 3
             do (vector-push-extend i guesses))
     (copy-seq guesses)))
 
-(defun information (word possible-words)
-  "compute the information that the `word' would reveal under given `possible-word'"
+(defun entropy (word possible-words)
+  "compute the average information that the `word' would reveal under given `possible-word'"
   (declare (optimize (speed 3) (space 3) (safety 0))
            (type (simple-array index) possible-words)
            (type index word))
@@ -116,20 +116,20 @@ represented as a number for 0 to 3^5 in base 3
             summing (* kbyl (coerce (log kbyl) 'single-float)) into total single-float
           finally (return (* -1 total (/ (log 2)))))))
 
-(defun highest-information (previous-guesses-and-colors)
-  "find the `word' that reveals the highest information given the previous guesses"
-  (declare (optimize (speed 3) (safety 0) (debug 3))
+(defun highest-entropy (previous-guesses-and-colors)
+  "find the `word' that reveals the highest average information given the previous guesses"
+  (declare (optimize (speed 3) (safety 0))
            (type cons previous-guesses-and-colors))
   (let ((guesses (valid-guesses previous-guesses-and-colors)))
     (declare (type (simple-array index) guesses))
     (if (<= (length guesses) 2)
         (elt guesses 0)
         (loop for i of-type fixnum from 0 to +max-index+
-              for info single-float = (information i guesses)
+              for entropy single-float = (entropy i guesses)
               with max single-float = -1.0
               with maxi of-type index = 0
-              do (when (> info max)
-                   (setf max info
+              do (when (> entropy max)
+                   (setf max entropy
                          maxi i))
               finally (return maxi)))))
 
@@ -141,7 +141,7 @@ represented as a number for 0 to 3^5 in base 3
   (let ((previous-guesses ()))
     (loop repeat 6
           for guess = (index "trace")
-            then (highest-information previous-guesses)
+            then (highest-entropy previous-guesses)
           for color = (color guess word) do
             (push (cons guess color) previous-guesses)
             (when (= guess word)
@@ -171,7 +171,7 @@ represented as a number for 0 to 3^5 in base 3
   (lparallel:pdotimes (i (1+ +max-answer-word-index+))
     (setf (aref *games* i) (simulate-game i))))
 
-(defun average-score (&optional (games *score*))
+(defun average-score (&optional (games *games*))
   (let ((steps 0)
         (pass 0)
         (failed 0))
