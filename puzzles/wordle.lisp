@@ -13,8 +13,9 @@
 (defconstant +max-index+ (1- (length *words*)))
 
 ;;; Index
-;; instead of string, the index of a word in the *words* vector is used to represent the word in the program
-;; so, we define few things to ease that
+;; instead of string, the index of a word in the *words* vector is used to represent
+;;  the word in the program. so, we define few things to ease that
+
 (deftype index ()
   `(integer 0 ,+max-index+))
 
@@ -64,6 +65,7 @@ represented as a number for 0 to 3^5 in base 3
     total))
 
 ;; Memorize Colors
+;; run (fill-color-table) before using simulate-game, entropy, or highest-entropy functions
 (defparameter *color-table* (make-array (list (length *words*) (length *words*))
                                         :element-type 'color
                                         :initial-element 0))
@@ -82,6 +84,7 @@ represented as a number for 0 to 3^5 in base 3
   (the color (aref *color-table* guess actual-word)))
 
 ;;; Finding Best Guess
+(declaim (ftype (function ((cons index color)) (vector index)) valid-guesses))
 (defun valid-guesses (previous-guesses-and-colors)
   "return the `words' which are possible answers given the previous guesses and their color
 `previous-guesses-and-colors' is a list of pairs (`guess-word' and `color')"
@@ -94,17 +97,14 @@ represented as a number for 0 to 3^5 in base 3
                             (= (color guess-word i) color)))
                       previous-guesses-and-colors)
             do (vector-push-extend i guesses))
-    (copy-seq guesses)))
+    guesses))
 
 (defun entropy (word possible-words)
   "compute the average information that the `word' would reveal under given `possible-word'"
-  (declare (optimize (speed 3) (space 3) (safety 0))
-           (type (simple-array index) possible-words)
+  (declare (optimize (speed 3) (safety 0))
+           (type (array index) possible-words)
            (type index word))
-  (let ((possibilites (make-array #.(- (expt 3 6) 1) :element-type 'fixnum :initial-element 0)))
-    (loop for i fixnum from 0
-          repeat (length possibilites)
-          do (setf (aref possibilites i) 0))
+  (let ((possibilites (make-array #.(expt 3 5) :element-type 'fixnum :initial-element 0)))
     (map 'nil #'(lambda (w)
                   (declare (type index w))
                   (incf (aref possibilites (color word w))))
@@ -121,9 +121,9 @@ represented as a number for 0 to 3^5 in base 3
   (declare (optimize (speed 3) (safety 0))
            (type cons previous-guesses-and-colors))
   (let ((guesses (valid-guesses previous-guesses-and-colors)))
-    (declare (type (simple-array index) guesses))
+    (declare (type (array index) guesses))
     (if (<= (length guesses) 2)
-        (elt guesses 0)
+        (aref guesses 0)
         (loop for i of-type fixnum from 0 to +max-index+
               for entropy single-float = (entropy i guesses)
               with max single-float = -1.0
@@ -159,7 +159,23 @@ represented as a number for 0 to 3^5 in base 3
                      (t (error "invalid character; should be one of b,y,g")))
                    (expt 3 i))))
 
+(defun decode-color (color)
+  (let ((str (make-string 5 :initial-element #\b)))
+    (loop for n = color then (truncate n 3)
+          for i from 0
+          when (= n 0)
+            return str
+          do (setf (char str i) (case (mod n 3)
+                                  (0 #\b)
+                                  (1 #\y)
+                                  (2 #\g))))))
+
+(defun encode (&rest previous-guesses-and-colors*)
+  (loop for (guess color . rest) on previous-guesses-and-colors* by #'cddr
+        collect (cons (index guess) (encode-color color))))
+
 ;; Benchmarking
+;; before running benchmark run (fill-color-table)
 (defparameter *games* (make-array (length *answers*)))
 (defun run-all-games ()
   (loop for i from 0 to +max-answer-word-index+ do
@@ -168,6 +184,7 @@ represented as a number for 0 to 3^5 in base 3
       (format t "~&~,2f% Complete" (* (/ i +max-answer-word-index+) 100)))))
 
 (defun prun-all-games ()
+  "Parallely run all games"
   (lparallel:pdotimes (i (1+ +max-answer-word-index+))
     (setf (aref *games* i) (simulate-game i))))
 
@@ -190,7 +207,7 @@ represented as a number for 0 to 3^5 in base 3
         (total (length games)))
     (loop for i from 0 to +max-answer-word-index+
           for key = (index->word i)
-          for guesses in games do
+          for guesses across games do
             (if (string-equal key (first guesses))
                 (incf (getf steps (length guesses) 0))
                 (incf (getf steps :fail 0))))
