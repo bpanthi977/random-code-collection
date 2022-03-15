@@ -41,28 +41,29 @@ represented as a number for 0 to 3^5 in base 3
 | 1     | different place |
 | 2     | right           |"
   (let ((total 0)
-        (guess (copy-seq guess))
-        (actual-word (copy-seq actual-word)))
-    (loop for c1 across guess
-          for c2 across actual-word
-          for i from 0
-          for color = (cond ((eql c1 c2) (setf (char guess i) #\Space
-                                               (char actual-word i) #\Space)
-                             2)
-                            (t 0))
-          do (incf total (* color (expt 3 i))))
-    (loop for c1 across guess
-          for c2 across actual-word
-          for i from 0
-          for color = (if (eql c1 #\Space)
-                          0
-                          (let ((p (position c1 actual-word)))
-                            (if p
-                                (progn (setf (char actual-word p) #\Space)
-                                       1)
-                                0)))
-          do (incf total (* color (expt 3 i))))
-    total))
+        (matches (make-array 5 :element-type 'bit :initial-element 0)))
+    (flet ((match-position (char)
+             (loop for c across actual-word
+                   for pos from 0
+                   when (and (eql c char) (eql (aref matches pos) 0))
+                     return pos)))
+
+      ;; mark green positions
+      (map-into matches (lambda (c1 c2) (if (eql c1 c2) 1 0))
+                guess actual-word)
+      ;; compute color
+      (loop for c1 across guess
+            for c2 across actual-word
+            for i from 0
+            for color = (serapeum:cond-let p
+                          ((eql c1 c2)
+                           2)
+                          ((match-position c1)
+                           (setf (aref matches p) 1)
+                           1)
+                          (t 0))
+            do (incf total (* color (expt 3 i))))
+      total)))
 
 ;; Memorize Colors
 ;; run (fill-color-table) before using simulate-game, entropy, or highest-entropy functions
