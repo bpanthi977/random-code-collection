@@ -121,7 +121,7 @@
 	 (:sdl-key-w
 	  (incf *translation* (* *scale* #C(0 -20))))
 	 (:sdl-key-s
-	  (incf *translation* (* *scale* #C(0 -20))))))
+	  (incf *translation* (* *scale* #C(0 20))))))
 
       (:idle
        ()
