@@ -1,3 +1,5 @@
+;; Read the blog post for this program here: https://bpanthi.com.np/maths/wordle.html
+
 (ql:quickload :serapeum)
 (ql:quickload :lparallel)
 (setf lparallel:*kernel* (lparallel:make-kernel 8))
