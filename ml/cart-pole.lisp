@@ -1,17 +1,12 @@
 ;;;; cart-pole.lisp
-(ql:quickload '(#:alexandria #:serapeum))
-(uiop:define-package #:cart-pole/utils
-    (:use #:alexandria #:serapeum)
-  (:reexport #:alexandria #:serapeum))
-
 (defpackage #:cart-pole
-  (:use #:cl)
-  (:local-nicknames (#:u #:cart-pole/utils)))
+  (:use #:cl))
 
 (in-package #:cart-pole)
 
 (setf *read-default-float-format* 'double-float)
 (declaim (optimize (speed 3) (space 0 ) (safety 0) (debug 0)))
+
 ;;; state
 (defmacro defstate (&rest components)
   `(progn
@@ -123,7 +118,7 @@
            (*                ωi)))))
 
 
-;;; Q Table
+;;; Setup Q-Table
 (defparameter *q-table* nil)
 (defparameter *q-table-touches* nil)
 (defparameter *transition-table* nil)
@@ -149,8 +144,7 @@
     (incf (aref *q-table-touches* idx))
     (setf (aref *q-table* idx) value)))
 
-
-;;; Optimal Actions and Rewards
+;;; Define Reward & Optimal Actions
 (defun optimal-action (s)
   (let ((idx (* +total-actions+ (discretize-state s)))
         (max -1.0)
@@ -236,6 +230,8 @@
           (incf *iterations*))))
 
 ;;; UI
+(ql:quickload :clutter/html)
+(ql:quickload :cl-svg)
 (in-package :clutter)
 (defclass cart-pole-app (view)
   ())
