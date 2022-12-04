@@ -1,3 +1,5 @@
+;; see https://github.com/bpanthi977/einsum for current developments. And asdf loadable library
+
 (defpackage :einsum
   (:use :cl)
   (:export #:einsum))
