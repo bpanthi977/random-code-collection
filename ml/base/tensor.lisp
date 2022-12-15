@@ -1,12 +1,4 @@
-(ql:quickload :einsum)
-(defpackage :tensor
-  (:use :cl #:einsum)
-  (:export
-   #:initialize-network
-   #:forward
-   #:update-weights))
-
-(in-package :tensor)
+(in-package #:ml/tensor)
 
 ;;;; Data Types
 
@@ -44,6 +36,14 @@
                 :gradient (make-array (array-dimensions array))
                 :gradient-batch (make-array (array-dimensions array))))
 
+(export 'set-tensor)
+(defun set-tensor (tensor array)
+  (let ((arr1 (storage tensor))
+        (arr2 (if (tensor-p array) (storage array) array)))
+    (loop for i from 0 below (array-total-size arr1) do
+          (setf (row-major-aref arr1 i)
+                (row-major-aref arr2 i)))))
+
 (defmethod vector-size ((tensor tensor))
   (with-slots (storage) tensor
     (assert (= (array-rank storage)))
@@ -61,6 +61,29 @@
         (g (gradient tensor)))
     (loop for i from 0 below size do
       (setf (row-major-aref g i) 0))))
+
+;;; Initializations
+
+(export 'xavier)
+(defun xavier (tensor input-size output-size)
+  (declare (ignore output-size))
+  (let* ((1/sqrtk (/ (sqrt input-size)))
+         (2/sqrtk (* 2.0 1/sqrtk))
+         (arr (storage tensor)))
+    (loop for i from 0 below (array-total-size arr) do
+      (setf (row-major-aref arr i)
+            (- (random 2/sqrtk)
+               1/sqrtk)))))
+
+(export 'he)
+(defun he (tensor input-size output-size)
+  (declare (ignore output-size))
+  (let* ((2/sqrtk (/ 2.0 (sqrt input-size)))
+         (arr (storage tensor)))
+    (loop for i from 0 below (array-total-size arr) do
+      (setf (row-major-aref arr i)
+            (ml/utils:gaussian-random 0
+                                      2/sqrtk)))))
 
 ;;; Operation on Tensors
 (defclass operation ()
@@ -225,20 +248,27 @@
    (input :type tensor :initarg :input)
    (result-size :type fixnum :initarg :result-size)))
 
-(defmethod initialize-instance :after ((o linear) &key result-size)
-  (unless (slot-boundp o 'weights)
-    (setf (slot-value o 'weights)
-          (make-tensor result-size (vector-size (slot-value o 'input)))))
-  (unless (slot-boundp o 'bias)
-    (setf (slot-value o 'bias)
-          (make-tensor result-size)))
-  (unless (slot-boundp o 'result)
-    (setf (slot-value o 'result)
-          (make-tensor result-size))))
+(defmethod initialize-instance :after ((o linear) &key result-size initialization)
+  (let ((input-size (vector-size (slot-value o 'input))))
+    (unless (slot-boundp o 'weights)
+      (setf (slot-value o 'weights)
+            (make-tensor result-size input-size))
+      (funcall initialization (slot-value o 'weights)
+               input-size result-size))
+    (unless (slot-boundp o 'bias)
+      (setf (slot-value o 'bias)
+            (make-tensor result-size))
+      (funcall initialization (slot-value o 'bias)
+               input-size result-size))
+    (unless (slot-boundp o 'result)
+      (setf (slot-value o 'result)
+            (make-tensor result-size)))))
 
 (export '->linear)
-(defun ->linear (input result-size)
-  (slot-value (make-instance 'linear :result-size result-size :input input)
+(defun ->linear (input result-size &key (initialization #'xavier))
+  (slot-value (make-instance 'linear :result-size result-size
+                                     :input input
+                                     :initialization initialization)
               'result))
 
 (defmethod inputs ((o linear))
@@ -263,13 +293,12 @@
         (dL/dresult (gradient (slot-value o 'result)))
         (dL/dweights (gradient (slot-value o 'weights)))
         (dL/dbias (gradient (slot-value o 'bias))))
-    (einsum (ij :to ij) :into dL/dweights
-            (+ (ij dl/dweights)
-               (* (j input) (i dL/dresult))))
-    (einsum (i :to i) :into dL/dbias
-            (+ (i dl/dbias) (i dL/dresult)))
-    (einsum (ij :to j) :into dl/dinput
-            (+ (j dl/dinput) (* (ij weights) (i dL/dresult))))))
+    (einsum (ij :to ij) :+into dL/dweights
+            (* (j input) (i dL/dresult)))
+    (einsum (i :to i) :+into dL/dbias
+            (i dL/dresult))
+    (einsum (ij :to j) :+into dl/dinput
+            (* (ij weights) (i dL/dresult)))))
 
 ;;;; Activation Functions
 (defclass activation (operation)
@@ -422,10 +451,9 @@
   (let* ((dL/dinput (gradient (slot-value o 'input)))
          (result (storage (slot-value o 'result)))
          (dL/dresult (gradient (slot-value o 'result))))
-    (einsum (ij :to j) :into dL/dinput
-            (+ (j dL/dinput)
-               (* (i dl/dresult)
-                  (i result) (- (if (= i j) 1 0) (j result)))))))
+    (einsum (ij :to j) :+into dL/dinput
+            (* (i dl/dresult)
+               (i result) (- (if (= i j) 1 0) (j result))))))
 
 ;;; Ln(Softmax)
 (defclass log-softmax (activation1)
@@ -455,10 +483,9 @@
   (let* ((dL/dinput (gradient (slot-value o 'input)))
          (result (storage (slot-value o 'result)))
          (dL/dresult (gradient (slot-value o 'result))))
-    (einsum (ij :to j) :into dL/dinput
-            (+ (j dL/dinput)
-               (* (i dL/dresult) (- (if (= i j) 1 0)
-                                    (exp (j result))))))))
+    (einsum (ij :to j) :+into dL/dinput
+            (* (i dL/dresult) (- (if (= i j) 1 0)
+                                 (exp (j result)))))))
 
 ;;; Ln
 (defclass natural-log (activation)
@@ -479,8 +506,8 @@
   (let* ((dL/dinput (gradient (slot-value o 'input)))
          (input (storage (slot-value o 'input)))
          (dL/dresult (gradient (slot-value o 'result))))
-    (einsum (i :to i) :into dL/dinput
-            (+ (i dl/dinput) (* (i dL/dresult) (/ (i input)))))))
+    (einsum (i :to i) :+into dL/dinput
+            (* (i dL/dresult) (/ (i input))))))
 
 ;; Sum all nodes to return a rank 0 tensor
 (defclass sum0 (activation1->0)
@@ -522,5 +549,5 @@
   (let* ((dL/dinput (gradient (slot-value o 'input)))
          (input (storage (slot-value o 'input)))
          (dL/dresult (aref (gradient (slot-value o 'result)) 0)))
-    (einsum (i :to i) :into dL/dinput (+ (i dl/dinput)
-                                         (* dL/dresult (i input))))))
+    (einsum (i :to i) :+into dL/dinput
+            (* dL/dresult (i input)))))
