@@ -49,16 +49,23 @@
     (assert (= (array-rank storage)))
     (array-dimension storage 0)))
 
-(defun add-gardient-to-batch (tensor)
+(defun add-gradient-to-batch (tensor)
   (let ((size (reduce #'* (tensor-dimesions tensor)))
         (g (gradient tensor))
         (gb (gradient-batch tensor)))
     (loop for i from 0 below size do
           (incf (row-major-aref gb i) (row-major-aref g i)))))
 
+(defun set-gradient-zero (tensor)
+  (let ((size (reduce #'* (tensor-dimesions tensor)))
+        (g (gradient tensor)))
+    (loop for i from 0 below size do
+      (setf (row-major-aref g i) 0))))
+
 ;;; Operation on Tensors
 (defclass operation ()
-  ((result :type tensor)))
+  ((result :type tensor)
+   (path-count :type fixnum :accessor path-count)))
 
 (defmethod initialize-instance :around ((o operation) &key)
   (call-next-method)
@@ -86,12 +93,24 @@
                   (if weights
                       (row-major-aref weights i)
                       1)))
-      (labels ((rec (tensor)
+      (labels ((rec (tensor f)
                  (with-slots (produced-by) tensor
                    (when produced-by
-                     (compute-gradient produced-by)
-                     (map nil #'rec (inputs produced-by))))))
-        (rec tensor)
+                     (funcall f produced-by)
+                     (map nil (lambda (tensor)
+                                (rec tensor f))
+                          (inputs produced-by))))))
+        (rec tensor (lambda (o)
+                      (setf (path-count o) 0)))
+        (rec tensor (lambda (o)
+                      (incf (path-count o))
+                      (when (= 1 (path-count o))
+                        (map 'nil #'set-gradient-zero (inputs o)))))
+        (rec tensor (lambda (o)
+                      (decf (path-count o))
+                      (when (= 0 (path-count o))
+                        (compute-gradient o)
+                        (map 'nil #'add-gradient-to-batch (inputs o)))))
         gradient))))
 
 (export 'parameters)
@@ -141,9 +160,8 @@
         (loop for input in inputs
               for dL/dinput = (gradient input) do
               (loop for i from 0 below size do
-                    (setf (row-major-aref dL/dinput i)
-                          (row-major-aref dL/dresult i)))))
-    (map 'nil #'add-gardient-to-batch inputs)))
+                    (incf (row-major-aref dL/dinput i)
+                          (row-major-aref dL/dresult i)))))))
 
 ;;;; Product
 (defclass product (operation)
@@ -191,16 +209,14 @@
               for rest = (remove input inputs)
               for dL/dinput = (gradient input) do
               (loop for i from 0 below size do
-                    (setf (row-major-aref dL/dinput i)
+                    (incf (row-major-aref dL/dinput i)
                           (* (row-major-aref dL/dresult i)
                              (loop for inp in rest
                                    with product = 1.0d0 do
                                    (setf product (* product (if (numberp inp)
                                                                 inp
                                                                 (row-major-aref (storage inp) i))))
-                                   finally (return product))))))
-        (map 'nil #'add-gardient-to-batch tensor-inputs))))
-
+                                   finally (return product)))))))))
 
 ;;; Linear Connections
 (defclass linear (operation)
@@ -242,16 +258,18 @@
 
 (defmethod compute-gradient ((o linear))
   (let ((input (storage (slot-value o 'input)))
+        (dL/dinput (gradient (slot-value o 'input)))
+        (weights (storage (slot-value o 'weights)))
         (dL/dresult (gradient (slot-value o 'result)))
         (dL/dweights (gradient (slot-value o 'weights)))
         (dL/dbias (gradient (slot-value o 'bias))))
     (einsum (ij :to ij) :into dL/dweights
-            (* (j input) (i dL/dresult)))
+            (+ (ij dl/dweights)
+               (* (j input) (i dL/dresult))))
     (einsum (i :to i) :into dL/dbias
-            (i dL/dresult))
-    (add-gardient-to-batch (slot-value o 'weights))
-    (add-gardient-to-batch (slot-value o 'bias))))
-
+            (+ (i dl/dbias) (i dL/dresult)))
+    (einsum (ij :to j) :into dl/dinput
+            (+ (j dl/dinput) (* (ij weights) (i dL/dresult))))))
 
 ;;;; Activation Functions
 (defclass activation (operation)
@@ -313,9 +331,8 @@
          (size (array-total-size result)))
     (loop for i from 0 below size
           for r = (row-major-aref result i) do
-      (setf (row-major-aref dl/dinput i)
-            (* r (- 1 r))))
-    (add-gardient-to-batch (slot-value o 'input))))
+      (incf (row-major-aref dl/dinput i)
+            (* r (- 1 r))))))
 
 ;; ReLU
 (defclass ReLU (activation)
@@ -339,14 +356,14 @@
 
 (defmethod compute-gradient ((o ReLU))
   (let* ((dL/dinput (gradient (slot-value o 'input)))
+         (dL/dresult (gradient (slot-value o 'result)))
          (input (storage (slot-value o 'result)))
          (size (array-total-size input)))
     (loop for i from 0 below size
           for x = (row-major-aref input i) do
-      (setf (row-major-aref dl/dinput i)
+      (incf (row-major-aref dl/dinput i)
             (if (> x 0)
-                1 0)))
-    (add-gardient-to-batch (slot-value o 'input))))
+                (row-major-aref dl/dresult i) 0)))))
 
 ;;; Leaky ReLU
 (defclass ReLU2 (activation)
@@ -372,18 +389,18 @@
 (defmethod compute-gradient ((o ReLU2))
   (let* ((dL/dinput (gradient (slot-value o 'input)))
          (input (storage (slot-value o 'result)))
+         (dL/dresult (gradient (slot-value o 'result)))
          (leak-slope (slot-value o 'leak-slope))
          (size (array-total-size input)))
     (loop for i from 0 below size
           for x = (row-major-aref input i) do
-      (setf (row-major-aref dl/dinput i)
-            (if (> x 0)
-                1 leak-slope)))
-    (add-gardient-to-batch (slot-value o 'input))))
-
+            (incf (row-major-aref dl/dinput i)
+                  (* (row-major-aref dl/dresult i)
+                     (if (> x 0)
+                         1 leak-slope))))))
 ;; Softmax
 (defclass softmax (activation1)
-  ((sum)))
+  ())
 
 (export '->softmax)
 (defun ->softmax (input)
@@ -398,21 +415,17 @@
     (einsum (i :to i) :into result
             (exp (- (i input) max)))
     (let ((sum (reduce #'+ result)))
-      (setf (slot-value o 'sum) sum)
       (einsum (i :to i) :into result
               (/ (i result) sum)))))
 
 (defmethod compute-gradient ((o softmax))
   (let* ((dL/dinput (gradient (slot-value o 'input)))
          (result (storage (slot-value o 'result)))
-         (dL/dresult (gradient (slot-value o 'result)))
-         (f (- (/ 1 (slot-value o 'sum)))))
-
+         (dL/dresult (gradient (slot-value o 'result))))
     (einsum (ij :to j) :into dL/dinput
-            (* (j dl/dresult) (+ (if (= i j) 1 0)
-                                 f)
-               (i result)))
-    (add-gardient-to-batch (slot-value o 'input))))
+            (+ (j dL/dinput)
+               (* (i dl/dresult)
+                  (i result) (- (if (= i j) 1 0) (j result)))))))
 
 ;;; Ln(Softmax)
 (defclass log-softmax (activation1)
@@ -423,25 +436,29 @@
   (slot-value (make-instance 'log-softmax :input input)
               'result))
 
+#+nil(defun ->log-softmax (input)
+  (->natural-log (->softmax input)))
+
 (defmethod forward ((o log-softmax))
-  (let ((input (storage (slot-value o 'input)))
-        (result (storage (slot-value o 'result))))
+  (let* ((input (storage (slot-value o 'input)))
+         (max (reduce #'max input))
+         (result (storage (slot-value o 'result))))
 
     (einsum (i :to i) :into result
-            (exp (i input)))
+            (exp (- (i input) max)))
     (let* ((sum (reduce #'+ result))
            (logsum (log sum)))
       (einsum (i :to i) :into result
-              (- (i input) logsum)))))
+              (- (i input) max logsum)))))
 
 (defmethod compute-gradient ((o log-softmax))
   (let* ((dL/dinput (gradient (slot-value o 'input)))
          (result (storage (slot-value o 'result)))
          (dL/dresult (gradient (slot-value o 'result))))
     (einsum (ij :to j) :into dL/dinput
-            (* (i dL/dresult) (- (if (= i j) 1 0)
-                                 (exp (j result)))))
-    (add-gardient-to-batch (slot-value o 'input))))
+            (+ (j dL/dinput)
+               (* (i dL/dresult) (- (if (= i j) 1 0)
+                                    (exp (j result))))))))
 
 ;;; Ln
 (defclass natural-log (activation)
@@ -463,8 +480,7 @@
          (input (storage (slot-value o 'input)))
          (dL/dresult (gradient (slot-value o 'result))))
     (einsum (i :to i) :into dL/dinput
-            (* (i dL/dresult) (/ (i input))))
-    (add-gardient-to-batch (slot-value o 'input))))
+            (+ (i dl/dinput) (* (i dL/dresult) (/ (i input)))))))
 
 ;; Sum all nodes to return a rank 0 tensor
 (defclass sum0 (activation1->0)
@@ -482,9 +498,10 @@
 
 (defmethod compute-gradient ((o sum0))
   (let* ((dL/dinput (gradient (slot-value o 'input)))
-         (dL/dresult (gradient (slot-value o 'result))))
-    (einsum (i :to i) :into dL/dinput (i dL/dresult))
-    (add-gardient-to-batch (slot-value o 'input))))
+         (dL/dresult (aref (gradient (slot-value o 'result))
+                           0)))
+    (einsum (i :to i) :into dl/dinput
+            (+ (i dl/dinput) dl/dresult))))
 
 ;;; Sum of square of all the nodes
 ;;; returns a rank 0 tensor
@@ -505,5 +522,5 @@
   (let* ((dL/dinput (gradient (slot-value o 'input)))
          (input (storage (slot-value o 'input)))
          (dL/dresult (aref (gradient (slot-value o 'result)) 0)))
-    (einsum (i :to i) :into dL/dinput (* dL/dresult (i input)))
-    (add-gardient-to-batch (slot-value o 'input))))
+    (einsum (i :to i) :into dL/dinput (+ (i dl/dinput)
+                                         (* dL/dresult (i input))))))
