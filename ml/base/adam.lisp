@@ -1,5 +1,5 @@
 (ql:quickload :serapeum)
-(load "./tensor.lisp")
+;;(load "./tensor.lisp")
 
 (uiop:define-package  :utils
     (:use :serapeum :alexandria)
@@ -72,7 +72,7 @@
 ;;; Adam Optimizer
 (defun adam-optimizer (parameters &key
                                 (alpha 0.001)
-                                (beta1 0.99) (beta2 0.99)
+                                (beta1 0.9) (beta2 0.99)
                                 (epsilon (expt 10 -8)))
   (let* ((total-size (reduce #'+ parameters :key (u:compose #'array-total-size #'t:storage)))
          (m (make-array total-size :initial-element 0.0d0))
