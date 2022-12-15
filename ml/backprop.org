@@ -22,10 +22,11 @@ This [[https://machinelearningmastery.com/implement-backpropagation-algorithm-sc
    #+begin_src lisp :tangle backprop.lisp
      (defun activation (weights inputs)
        (assert (= (length inputs) (1- (length weights))))
-       (loop with activation = (elt weights 0) 
-	     for x across inputs 
-	     for i from 1 
-	     summing (* (aref weights i) x)))
+       (loop with activation = (elt weights 0)
+             for x across inputs
+             for i from 1
+             do (incf activation (* (aref weights i) x))
+             finally (return activation)))
    #+end_src
 
    #+RESULTS:

@@ -5,10 +5,11 @@
 
 (defun activation (weights inputs)
   (assert (= (length inputs) (1- (length weights))))
-  (loop with activation = (elt weights 0) 
-	for x across inputs 
-	for i from 1 
-	summing (* (aref weights i) x)))
+  (loop with activation = (elt weights 0)
+        for x across inputs
+        for i from 1
+        do (incf activation (* (aref weights i) x))
+        finally (return activation)))
 
 (defun transfer (activation)
   (/ (1+ (exp (- activation)))))
@@ -79,33 +80,33 @@
   (* output (- 1 output)))
 
 (defun backpropagate-error (network expected)
-  (with-slots (weights outputs errors) network 
-    ;; errors at output neurons 
+  (with-slots (weights outputs errors) network
+    ;; errors at output neurons
     (let ((err (aref errors (1- (length errors)))))
-      (map-into err 
-		(lambda (o e)
-		  (* (- o e) 
-		     (transfer-derivative o)))
-		(aref outputs (1- (length outputs)))
-		expected))
+      (map-into err
+                (lambda (o e)
+                  (* (- o e)
+                     (transfer-derivative o)))
+                (aref outputs (1- (length outputs)))
+                expected))
 
-    ;; error at neurons in hidden layers 
-    ;; loop thorugh layers 
-    (loop for i from (- (length errors) 2) downto 0 
-	  for err_i+1 = (aref errors (1+ i))
-	  for err_i = (aref errors i)
-	  for output_i = (aref outputs i) 
-	  for weights_i = (aref weights i) do 
-	    ;; loop thorugh each neuron in the layer
-	    (loop for o across output_i 
-		  for j from 0 do 
-		    ;; set error 
-		    (setf (aref err_i j)
-			  (* (transfer-derivative o)
-			     (loop for err across err_i+1 
-				   for k from 0 
-				   summing (* (aref (aref weights_i k) j)
-					      err))))))))
+    ;; error at neurons in hidden layers
+    ;; loop thorugh layers
+    (loop for i from (- (length errors) 2) downto 0
+          for err_i+1 = (aref errors (1+ i))
+          for err_i = (aref errors i)
+          for output_i = (aref outputs i)
+          for weights_i+1 = (aref weights (1+ i)) do
+            ;; loop thorugh each neuron in the layer
+            (loop for o across output_i
+                  for j from 0 do
+                    ;; set error
+                    (setf (aref err_i j)
+                          (* (transfer-derivative o)
+                             (loop for err across err_i+1
+                                   for k from 0
+                                   summing (* (aref (aref weights_i+1 k) j)
+                                              err))))))))
 
 (defun update-weights (network input learning-rate)
   ;; loop across layer
