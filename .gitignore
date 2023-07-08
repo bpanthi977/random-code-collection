@@ -1,3 +1,9 @@
 /target
 /ml-workbook/data/
 /ml-workbooks/data/
+/ml-workbooks/runs/
+/ml-workbooks/wandb/
+/ml-workbooks/RLAlgs/runs/
+__pycache__
+.DS_Store
+.ipynb_checkpoints
