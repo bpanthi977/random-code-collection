@@ -1,0 +1,30 @@
+(in-package #:cl-callbreak-bot.utils)
+
+(export 'map-array)
+(defun map-array (func array &key (element-type (array-element-type array))
+                           (fill-pointer (and (array-has-fill-pointer-p array)
+                                              (fill-pointer array)))
+                           (adjustable (adjustable-array-p array)))
+  (declare (optimize (speed 3))
+           (type function func))
+  (let* ((dimensions (array-dimensions array))
+         (new-array (make-array dimensions
+                                :element-type element-type
+                                :adjustable adjustable
+                                :fill-pointer fill-pointer)))
+    (dotimes (i (array-total-size array))
+      (setf (row-major-aref new-array i)
+            (funcall func (row-major-aref array i))))
+    new-array))
+
+(export 'map-list)
+(declaim (inline map-list))
+(defun map-list (element-type initial-element func list)
+  (declare (optimize (speed 3))
+           (type function func))
+  (let* ((length (length list))
+         (array (make-array length :element-type element-type :initial-element initial-element)))
+    (dotimes (i length)
+      (setf (svref array i) (funcall func (car list))
+            list (cdr list)))
+    array))
