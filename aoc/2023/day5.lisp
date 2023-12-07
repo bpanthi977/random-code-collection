@@ -22,25 +22,31 @@ Ignores preceeding space but stops at any other character."
                 (t
                  (return (and found number))))))
 
+(deftype u64 () `(unsigned-byte 64))
 (defun read-numbers (stream &optional (n 0))
   "Read `n' numbers separated by any single character or multiple spaces
 If `n' = 0, read indefinitely"
-  (loop with numbers = (make-array 0 :adjustable t :fill-pointer 0)
-        for number = (read-number stream)
-        do
-           (if number
-               (progn (vector-push-extend number numbers)
-                      (when (= (length numbers) n)
-                        (return numbers)))
-               (return numbers))))
+  (declare (optimize (speed 3))
+           (type u64 n))
+  (let ((numbers (make-array 0 :element-type 'u64 :adjustable t :fill-pointer 0)))
+    (loop for number = (read-number stream)
+          do
+             (if number
+                 (progn (vector-push-extend number numbers)
+                        (when (= (length numbers) n)
+                          (return numbers)))
+                 (return numbers)))
+    (make-array (length numbers) :element-type 'u64 :initial-contents numbers)))
 
 (defun read-number-tuples (stream n)
   "Reads as many `n'-tuples of numbers as it can from `stream'"
-  (loop for row = (read-numbers stream n)
-        with rows = (list)
-        do (if (> (length row) 0)
-               (push row rows)
-               (return rows))))
+  (declare (type u64 n))
+  (the (cons (simple-array u64))
+       (loop for row = (read-numbers stream n)
+             with rows = (list)
+             do (if (> (length row) 0)
+                    (push row rows)
+                    (return rows)))))
 
 ;;; PART 1
 
@@ -138,3 +144,59 @@ then
                           (when (>= seed end)
                             (return)))
               finally (return min-loc))))))
+
+;;; Part 2 Bruteforce
+
+(defstruct translation
+  (dest 0 :type u64)
+  (start 0 :type u64)
+  (end 0 :type u64))
+
+(defun read-translation-map (str)
+  "Create a map that translates source number to destination number"
+  (declare (optimize (speed 0) (safety 3) (debug 3)))
+  (read-until str #\:)
+  (read-until str #\Newline)
+  (map '(vector translation)
+       (lambda (vec)
+         (make-translation :dest (elt vec 0)
+                           :start (elt vec 1)
+                           :end (+ (elt vec 1) (elt vec 2))))
+       (read-number-tuples str 3)))
+
+(declaim (inline seed-to-location))
+(defun seed-to-location (seed maps)
+  (declare (type u64 seed)
+           (type (simple-array (simple-array translation)) maps)
+           (optimize speed (safety 0)))
+  (loop for map of-type (simple-array translation) across maps do
+    (loop for transt of-type translation across map do
+      (when (and (<= (translation-start transt) seed)
+                 (< seed (translation-end transt)))
+        (let ((transformed (+ (translation-dest transt)
+                             (the u64 (- seed (translation-start transt))))))
+          (declare (type u64 transformed))
+          (setf seed transformed))
+        (return))))
+  seed)
+
+(defun solve2-bruteforce ()
+  (declare (optimize speed (safety 0)))
+  (with-open-file (str "./problem/day5.txt")
+    (let ((ranges (progn (read-until str #\:)
+                         (read-number-tuples str 2)))
+          (maps (make-array
+                 7
+                 :initial-contents (loop repeat 7
+                                         collect (read-translation-map str))
+                 :element-type '(simple-array translation))))
+      (declare (type (cons (simple-array u64)) ranges))
+      (loop with min-loc of-type u64 = most-positive-fixnum
+            for range of-type (simple-array u64) in ranges
+            for start of-type u64 = (aref range 0)
+            for end of-type u64 = (+ start (aref range 1)) do
+              (loop for seed of-type u64 from start below end
+                    for loc of-type u64 = (seed-to-location seed maps) do
+                      (when (< loc min-loc)
+                        (setf min-loc loc)))
+            finally (return min-loc)))))
